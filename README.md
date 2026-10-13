@@ -43,7 +43,7 @@ about the compiler: install `build-essential` (or `clang`). To use Python 3.15 l
 
 ## Layout and owners (spec sections 9.1 and 12)
 
-| Path | Module | Owner | Person }
+| Path | Module | Owner | Person |
 |---|---|---|---|
 | `engine/include/formicae/{types,config,rng,grid,engine}.hpp`, `engine/src/{engine,pheromones,grid,config}.cpp` | M1 Core engine | P1 | (WRITE HERE) |
 | `engine/include/formicae/{species,ant,ai}.hpp`, `engine/src/{ai,species}.cpp` | M2 AI | P2 | (WRITE HERE) |

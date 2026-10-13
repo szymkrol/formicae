@@ -1,0 +1,10 @@
+# Replace the placeholders with GitHub handles of P1..P6 (spec section 13).
+/engine/include/antsim/{types,config,rng,grid,engine}.hpp  @P1
+/engine/src/{engine,pheromones,grid,config}.cpp            @P1
+/engine/include/antsim/{species,ant,ai}.hpp                @P2
+/engine/src/{ai,species}.cpp                               @P2
+/engine/include/antsim/{colony,combat}.hpp                 @P3
+/engine/src/{colony,combat,food}.cpp                       @P3
+/engine/bindings/ /CMakeLists.txt /pyproject.toml /python/antsim_mock.py /python/antsim_ui/config.py /engine/src/io.cpp @P4
+/python/antsim_ui/mapgen/ /python/antsim_ui/analytics/     @P5
+/python/antsim_ui/ui/                                      @P6

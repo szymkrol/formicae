@@ -1,0 +1,12 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync                 # Python from .python-version (3.13; bump to 3.15 per spec D8)
+      - run: uv run pytest -q
+      - run: make cpp-test
+      - run: SDL_VIDEODRIVER=dummy uv run antsim-ui --mock --frames 60

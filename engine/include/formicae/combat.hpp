@@ -1,8 +1,8 @@
 // combat.hpp - combat, death and hazard rules (spec section 6). Owner: P3 (M2).
 #pragma once
-#include "antsim/types.hpp"
+#include "formicae/types.hpp"
 
-namespace antsim {
+namespace formicae {
 class Engine;
 
 struct Target {
@@ -22,4 +22,4 @@ void resolve_attack(Engine& e, int attacker_slot, const Target& target);
 // counters by cause, kill credit to killer_species (-1 if none). The engine frees the slot after.
 void on_ant_death(Engine& e, int slot, DeathCause cause, int killer_species);
 
-}  // namespace antsim
+}  // namespace formicae

@@ -1,7 +1,7 @@
 // grid.cpp - layer allocation. Owner: P1 (M1).
-#include "antsim/grid.hpp"
+#include "formicae/grid.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void Grid::allocate(int width, int height, int species_count) {
   W = width;
@@ -20,4 +20,4 @@ void Grid::allocate(int width, int height, int species_count) {
   pher.assign(n * NUM_CHANNELS * static_cast<size_t>(S), 0.0f);
 }
 
-}  // namespace antsim
+}  // namespace formicae

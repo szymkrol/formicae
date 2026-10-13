@@ -1,4 +1,4 @@
-// module.cpp - pybind11 bindings: Python module `antsim` (spec section 9.3). Owner: P4 (M0).
+// module.cpp - pybind11 bindings: Python module `formicae` (spec section 9.3). Owner: P4 (M0).
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "antsim/engine.hpp"
+#include "formicae/engine.hpp"
 
 namespace py = pybind11;
-using namespace antsim;
+using namespace formicae;
 
 namespace {
 
@@ -47,7 +47,7 @@ CasteDef caste_from_dict(const py::dict& d) {
   return c;
 }
 
-// Converts the validated config dict produced by python/antsim_ui/config.py (spec section 11).
+// Converts the validated config dict produced by python/formicae_ui/config.py (spec section 11).
 // TODO(P4): reject unknown keys here as well; load_config() already does it on the Python side.
 Config config_from_dict(const py::dict& d) {
   Config cfg;
@@ -255,12 +255,12 @@ class Simulation {
 
 }  // namespace
 
-PYBIND11_MODULE(antsim, m) {
+PYBIND11_MODULE(formicae, m) {
   m.doc() = "Ant colony simulation engine (C++20). See docs/SPEC.md, section 9.3.";
   m.attr("__version__") = "0.1.0";
   m.attr("API_VERSION") = API_VERSION;
 
-  // NumPy dtypes of the exposed records; the layouts must match python/antsim_ui/types.py.
+  // NumPy dtypes of the exposed records; the layouts must match python/formicae_ui/types.py.
   PYBIND11_NUMPY_DTYPE(Ant, id, age, x, y, colony, trail_age, species, caste, state, last_dir, timer,
                        pad, health, carried_volume, carried_density, move_acc);
   PYBIND11_NUMPY_DTYPE(ColonyRecord, stored_energy, health, max_health, population, x, y, species,

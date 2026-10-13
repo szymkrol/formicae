@@ -1,4 +1,4 @@
-from antsim_ui.types import ANT_DTYPE, COLONY_DTYPE
+from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE
 
 
 def test_record_sizes():

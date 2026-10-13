@@ -4,19 +4,19 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import antsim_mock
-from antsim_ui.config import load_config
-from antsim_ui.mapgen import generate_map
-from antsim_ui.types import ANT_DTYPE, COLONY_DTYPE
+import formicae_mock
+from formicae_ui.config import load_config
+from formicae_ui.mapgen import generate_map
+from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE
 
 CONFIG = load_config(Path(__file__).parent.parent / "configs" / "default.json")
 
 
 def _implementations():
-    impls = [antsim_mock]
+    impls = [formicae_mock]
     try:
-        import antsim  # compiled module
-        impls.append(antsim)
+        import formicae  # compiled module
+        impls.append(formicae)
     except ImportError:
         pass
     return impls

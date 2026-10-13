@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from antsim_ui.types import METRIC_KEYS_PER_SPECIES
+from formicae_ui.types import METRIC_KEYS_PER_SPECIES
 
 
 class Analytics:

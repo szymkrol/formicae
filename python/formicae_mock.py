@@ -1,4 +1,4 @@
-"""Mock engine with the same API, dtypes, shapes and errors as the C++ module `antsim` (spec 9.3).
+"""Mock engine with the same API, dtypes, shapes and errors as the C++ module `formicae` (spec 9.3).
 
 Lets M3 and M4 be developed from week 1 without the C++ build. Ants random-walk; nothing else is
 simulated. Owner: P4 (M0). Keep it in sync with engine/bindings/module.cpp (API_VERSION).
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from antsim_ui.types import ANT_DTYPE, COLONY_DTYPE, NUM_CHANNELS, AntState
+from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE, NUM_CHANNELS, AntState
 
 __version__ = "0.1.0-mock"
 API_VERSION = 1

@@ -5,15 +5,15 @@
 #include <string>
 #include <vector>
 
-#include "antsim/ant.hpp"
-#include "antsim/colony.hpp"
-#include "antsim/config.hpp"
-#include "antsim/grid.hpp"
-#include "antsim/rng.hpp"
-#include "antsim/species.hpp"
-#include "antsim/types.hpp"
+#include "formicae/ant.hpp"
+#include "formicae/colony.hpp"
+#include "formicae/config.hpp"
+#include "formicae/grid.hpp"
+#include "formicae/rng.hpp"
+#include "formicae/species.hpp"
+#include "formicae/types.hpp"
 
-namespace antsim {
+namespace formicae {
 
 // Input of Engine::initialize (spec 8.3). Arrays are row-major [H, W].
 struct MapData {
@@ -105,4 +105,4 @@ class Engine {
   bool initialized_ = false;
 };
 
-}  // namespace antsim
+}  // namespace formicae

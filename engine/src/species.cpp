@@ -1,9 +1,9 @@
 // species.cpp - resolved [species][caste] table. Owner: P2 (M2).
 #include <algorithm>
 
-#include "antsim/species.hpp"
+#include "formicae/species.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void SpeciesTable::build(const Config& cfg) {
   species_count_ = static_cast<int>(cfg.species.size());
@@ -35,4 +35,4 @@ void SpeciesTable::build(const Config& cfg) {
   }
 }
 
-}  // namespace antsim
+}  // namespace formicae

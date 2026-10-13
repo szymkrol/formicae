@@ -1,7 +1,7 @@
 # Formicae ex machina - an ant simulation project
 
-Real-time ant colony simulator: C++20 engine (`engine/`), Python front end (`python/antsim_ui/`),
-pybind11 module `antsim`. The full technical specification is in `docs/SPEC.md`.
+Real-time ant colony simulator: C++20 engine (`engine/`), Python front end (`python/formicae_ui/`),
+pybind11 module `formicae`. The full technical specification is in `docs/SPEC.md`.
 
 ## Run it (uv)
 
@@ -19,9 +19,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh      # or: pipx install uv   /  
 uv sync                       # creates .venv, installs dependencies, builds the C++ module (first run ~1 min)
 
 # 3. run
-uv run antsim-ui --mock       # UI with the mock engine: dots move, no C++ needed
-uv run antsim-ui              # UI with the real C++ engine (ants appear once P3 implements spawning)
-uv run antsim-ui --map-seed 7 --sim-seed 3 --config configs/default.json
+uv run formicae-ui --mock       # UI with the mock engine: dots move, no C++ needed
+uv run formicae-ui              # UI with the real C++ engine (ants appear once P3 implements spawning)
+uv run formicae-ui --map-seed 7 --sim-seed 3 --config configs/default.json
 
 # 4. check
 uv run pytest                 # API tests: mock engine and the real C++ module
@@ -31,7 +31,7 @@ uv run ruff check .           # lint
 
 `make` shortcuts: `make sync`, `make run`, `make run-mock`, `make test`, `make cpp-test`, `make lint`,
 `make format`, `make clean`. After you edit any C++ file, `uv run ...` or `uv sync` rebuilds the
-module automatically. Headless check (no window): `SDL_VIDEODRIVER=dummy uv run antsim-ui --mock --frames 60`.
+module automatically. Headless check (no window): `SDL_VIDEODRIVER=dummy uv run formicae-ui --mock --frames 60`.
 
 UI keys: `Space` pause, `N` single step, `+`/`-` speed, `P` pheromone overlay, mouse wheel zoom,
 middle or right button drag to pan, `E` export `metrics.csv`.
@@ -45,12 +45,12 @@ about the compiler: install `build-essential` (or `clang`). To use Python 3.15 l
 
 | Path | Module | Owner |
 |---|---|---|
-| `engine/include/antsim/{types,config,rng,grid,engine}.hpp`, `engine/src/{engine,pheromones,grid,config}.cpp` | M1 Core engine | P1 |
-| `engine/include/antsim/{species,ant,ai}.hpp`, `engine/src/{ai,species}.cpp` | M2 AI | P2 |
-| `engine/include/antsim/{colony,combat}.hpp`, `engine/src/{colony,combat,food}.cpp` | M2 Combat, colonies, food | P3 |
-| `engine/bindings/`, `CMakeLists.txt`, `pyproject.toml`, `python/antsim_ui/config.py`, `python/antsim_mock.py`, `engine/src/io.cpp` | M0 Integration | P4 |
-| `python/antsim_ui/mapgen/`, `python/antsim_ui/analytics/` | M3 Map generator, analytics | P5 |
-| `python/antsim_ui/ui/` | M4 UI | P6 (panels: P4) |
+| `engine/include/formicae/{types,config,rng,grid,engine}.hpp`, `engine/src/{engine,pheromones,grid,config}.cpp` | M1 Core engine | P1 |
+| `engine/include/formicae/{species,ant,ai}.hpp`, `engine/src/{ai,species}.cpp` | M2 AI | P2 |
+| `engine/include/formicae/{colony,combat}.hpp`, `engine/src/{colony,combat,food}.cpp` | M2 Combat, colonies, food | P3 |
+| `engine/bindings/`, `CMakeLists.txt`, `pyproject.toml`, `python/formicae_ui/config.py`, `python/formicae_mock.py`, `engine/src/io.cpp` | M0 Integration | P4 |
+| `python/formicae_ui/mapgen/`, `python/formicae_ui/analytics/` | M3 Map generator, analytics | P5 |
+| `python/formicae_ui/ui/` | M4 UI | P6 (panels: P4) |
 
 ## What exists and what is a TODO
 
@@ -74,5 +74,5 @@ Camera, CSV export, and a basic renderer + HUD so the UI already runs. Search th
 - The grid functions of spec 9.4 (`idx`, `passable`, `occupant`, `pher`, `deposit`, `neighbors4`) are
   methods of `Grid`; `Engine` offers `rng()`, `spawn_ant()`, `kill_ant()`, `add_food()`.
 - Combat functions live in `engine/src/combat.cpp` (listed under colonies in the spec).
-- `CMakeLists.txt` installs `antsim_mock.py` next to the compiled module.
+- `CMakeLists.txt` installs `formicae_mock.py` next to the compiled module.
 - `generate_map` returns a flat placeholder map until P5 implements spec section 8.2.

@@ -3,7 +3,7 @@ requires = ["scikit-build-core>=0.10", "pybind11>=2.13", "cmake>=3.26"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "antsim"
+name = "formicae"
 version = "0.1.0"
 description = "Ant colony simulation: C++ engine, PyGame frontend"
 requires-python = ">=3.13"          # see spec D8: fall back to 3.13 if 3.15 wheels are missing
@@ -13,7 +13,7 @@ dependencies = ["numpy", "pygame-ce", "matplotlib"]
 dev = ["pytest", "ruff", "pybind11", "cmake"]   # pybind11 + cmake: plain C++ builds via `make cpp-test`
 
 [project.scripts]
-antsim-ui = "antsim_ui.__main__:main"
+formicae-ui = "formicae_ui.__main__:main"
 
 [tool.uv]
 # Rebuild the C++ module automatically when these change (`uv run` / `uv sync` check them).
@@ -22,11 +22,11 @@ cache-keys = [
   { file = "CMakeLists.txt" },
   { file = "engine/**/*.cpp" },
   { file = "engine/**/*.hpp" },
-  { file = "python/antsim_mock.py" },
+  { file = "python/formicae_mock.py" },
 ]
 
 [tool.scikit-build]
-wheel.packages = ["python/antsim_ui"]
+wheel.packages = ["python/formicae_ui"]
 cmake.build-type = "Release"
 
 [tool.pytest.ini_options]

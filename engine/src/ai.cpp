@@ -1,10 +1,10 @@
 // ai.cpp - ant behaviour (spec sections 5.3 and 5.4). Owner: P2 (M2).
-#include "antsim/ai.hpp"
+#include "formicae/ai.hpp"
 
-#include "antsim/combat.hpp"
-#include "antsim/engine.hpp"
+#include "formicae/combat.hpp"
+#include "formicae/engine.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void ant_update(Engine& e, int slot) {
   Ant& a = e.ants()[slot];
@@ -19,4 +19,4 @@ void ant_update(Engine& e, int slot) {
   //     candidates -> weighted choice (w = (eps + tau)^alpha * h * g) -> pay move cost -> deposit.
 }
 
-}  // namespace antsim
+}  // namespace formicae

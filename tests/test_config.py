@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from antsim_ui.config import load_config, validate_config
+from formicae_ui.config import load_config, validate_config
 
 DEFAULT = Path(__file__).parent.parent / "configs" / "default.json"
 

@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-#include "antsim/types.hpp"
+#include "formicae/types.hpp"
 
-namespace antsim {
+namespace formicae {
 
 struct Ant {
   uint32_t id;               //   0  unique id, never reused within a run
@@ -28,4 +28,4 @@ static_assert(sizeof(Ant) == 40, "Ant must stay 40 bytes (NumPy dtype relies on 
 
 inline bool is_alive(const Ant& a) { return a.state != static_cast<uint8_t>(AntState::Dead); }
 
-}  // namespace antsim
+}  // namespace formicae

@@ -2,9 +2,9 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "antsim/config.hpp"
+#include "formicae/config.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void Config::apply_defaults() {
   if (terrain.empty()) {
@@ -43,4 +43,4 @@ void Config::validate() const {
   if (!msg.empty()) throw std::invalid_argument(msg);
 }
 
-}  // namespace antsim
+}  // namespace formicae

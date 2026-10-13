@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from antsim_ui.types import S_MAX
+from formicae_ui.types import S_MAX
 
 # Allowed top-level sections of the JSON file; the nested keys are checked in _check_section().
 SECTIONS = {

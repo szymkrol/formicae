@@ -1,6 +1,6 @@
 """Shared constants and NumPy record layouts (spec sections 5.1, 9.3).
 
-The layouts must match engine/include/antsim/ant.hpp and colony.hpp byte for byte.
+The layouts must match engine/include/formicae/ant.hpp and colony.hpp byte for byte.
 """
 from __future__ import annotations
 

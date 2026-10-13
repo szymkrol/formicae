@@ -2,7 +2,7 @@
 #pragma once
 #include <cstdint>
 
-namespace antsim {
+namespace formicae {
 
 constexpr int S_MAX = 8;          // maximum number of species
 constexpr int NUM_CHANNELS = 3;   // HOME, FOOD, DANGER
@@ -32,4 +32,4 @@ constexpr Dir opposite(Dir d) {
 
 enum class DeathCause : uint8_t { Combat = 0, Hazard = 1, Age = 2, Orphan = 3 };
 
-}  // namespace antsim
+}  // namespace formicae

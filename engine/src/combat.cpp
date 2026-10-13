@@ -1,9 +1,9 @@
 // combat.cpp - combat, hazards, death handling (spec section 6). Owner: P3 (M2).
-#include "antsim/combat.hpp"
+#include "formicae/combat.hpp"
 
-#include "antsim/engine.hpp"
+#include "formicae/engine.hpp"
 
-namespace antsim {
+namespace formicae {
 
 Target find_target(const Engine& e, int attacker_slot) {
   (void)e;
@@ -31,4 +31,4 @@ void on_ant_death(Engine& e, int slot, DeathCause cause, int killer_species) {
   //   metrics: deaths_<cause>[species]++, kills[killer_species]++ when killer_species >= 0.
 }
 
-}  // namespace antsim
+}  // namespace formicae

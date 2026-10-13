@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import time
 
-from antsim_ui.analytics import Analytics
-from antsim_ui.ui.camera import Camera
-from antsim_ui.ui.renderer import OverlayState, Renderer, SimViews
-from antsim_ui.ui.timecontrol import TimeControl
+from formicae_ui.analytics import Analytics
+from formicae_ui.ui.camera import Camera
+from formicae_ui.ui.renderer import OverlayState, Renderer, SimViews
+from formicae_ui.ui.timecontrol import TimeControl
 
 WINDOW_SIZE = (1280, 800)
 SIDEBAR_WIDTH = 280

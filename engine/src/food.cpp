@@ -2,9 +2,9 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "antsim/engine.hpp"
+#include "formicae/engine.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void Engine::add_food(int cell, float volume, float density) {
   float& v = grid_.food_volume[cell];
@@ -60,4 +60,4 @@ void Engine::spawn_food_step() {
   // cfg_.food.max_food_cells. Use rng_ only, so runs stay deterministic.
 }
 
-}  // namespace antsim
+}  // namespace formicae

@@ -2,9 +2,9 @@
 #include <cassert>
 #include <cstdio>
 
-#include "antsim/engine.hpp"
+#include "formicae/engine.hpp"
 
-using namespace antsim;
+using namespace formicae;
 
 int main() {
   static_assert(sizeof(Ant) == 40 && sizeof(ColonyRecord) == 32);

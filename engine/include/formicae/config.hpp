@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "antsim/types.hpp"
+#include "formicae/types.hpp"
 
-namespace antsim {
+namespace formicae {
 
 struct TerrainDef {
   std::string name;
@@ -115,4 +115,4 @@ struct Config {
   void validate() const;
 };
 
-}  // namespace antsim
+}  // namespace formicae

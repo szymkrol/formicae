@@ -1,9 +1,9 @@
 // colony.cpp - colony lifecycle (spec sections 7.2, 7.3). Owner: P3 (M2).
-#include "antsim/colony.hpp"
+#include "formicae/colony.hpp"
 
-#include "antsim/engine.hpp"
+#include "formicae/engine.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void colony_update(Engine& e, int colony) {
   (void)e;
@@ -21,4 +21,4 @@ void on_colony_destroyed(Engine& e, int colony) {
   //   cell (volume += E / loot_density, density = loot_density), colonies_alive[species]--.
 }
 
-}  // namespace antsim
+}  // namespace formicae

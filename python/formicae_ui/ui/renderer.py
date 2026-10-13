@@ -10,8 +10,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from antsim_ui.types import Channel, Terrain
-from antsim_ui.ui.camera import Camera
+from formicae_ui.types import Channel, Terrain
+from formicae_ui.ui.camera import Camera
 
 TERRAIN_COLORS = np.array(
     [

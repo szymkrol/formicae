@@ -1,7 +1,7 @@
 // pheromones.cpp - pheromone update, pipeline step 5 (spec section 4). Owner: P1 (M1).
-#include "antsim/engine.hpp"
+#include "formicae/engine.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void Engine::pheromone_update() {
   const PheromoneParams& pp = cfg_.pheromone;
@@ -33,4 +33,4 @@ void Engine::pheromone_update() {
 
 }
 
-}  // namespace antsim
+}  // namespace formicae

@@ -2,7 +2,7 @@
 #pragma once
 #include <cstdint>
 
-namespace antsim {
+namespace formicae {
 
 class Rng {
  public:
@@ -37,4 +37,4 @@ class Rng {
   uint64_t inc_ = 1;
 };
 
-}  // namespace antsim
+}  // namespace formicae

@@ -3,9 +3,9 @@
 #include <array>
 #include <cstdint>
 
-#include "antsim/types.hpp"
+#include "formicae/types.hpp"
 
-namespace antsim {
+namespace formicae {
 
 // Exposed to Python as colonies() (32 bytes, see COLONY_DTYPE in python/antsim_ui/types.py).
 struct ColonyRecord {
@@ -26,12 +26,12 @@ struct ColonyExtra {
   std::array<float, MAX_CASTES> caste_ratio{1.f, 0.f, 0.f, 0.f};
 };
 
-}  // namespace antsim
+}  // namespace formicae
 
 // ---------------------------------------------------------------------------------------------
 // Entry points implemented by M2 (P3) and called by the engine (spec section 9.4).
 // ---------------------------------------------------------------------------------------------
-namespace antsim {
+namespace formicae {
 class Engine;
 
 // Pipeline step 2, once per live colony: spawn rule, cost, cooldown, free footprint cell (7.2).
@@ -39,4 +39,4 @@ void colony_update(Engine& e, int colony);
 
 // Called when a colony's health drops to 0 or below: loot food, clear footprint (7.3).
 void on_colony_destroyed(Engine& e, int colony);
-}  // namespace antsim
+}  // namespace formicae

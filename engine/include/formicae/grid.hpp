@@ -5,9 +5,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "antsim/types.hpp"
+#include "formicae/types.hpp"
 
-namespace antsim {
+namespace formicae {
 
 struct Neighbors4 {
   std::array<int, 4> cell{-1, -1, -1, -1};  // N, E, S, W cell indices; -1 if outside the map
@@ -61,4 +61,4 @@ struct Grid {
   }
 };
 
-}  // namespace antsim
+}  // namespace formicae

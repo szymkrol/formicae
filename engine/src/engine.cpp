@@ -1,14 +1,14 @@
 // engine.cpp - lifecycle, tick pipeline, ant slots. Owner: P1 (M1).
-#include "antsim/engine.hpp"
+#include "formicae/engine.hpp"
 
 #include <algorithm>
 #include <stdexcept>
 
-#include "antsim/ai.hpp"
-#include "antsim/colony.hpp"
-#include "antsim/combat.hpp"
+#include "formicae/ai.hpp"
+#include "formicae/colony.hpp"
+#include "formicae/combat.hpp"
 
-namespace antsim {
+namespace formicae {
 
 void Metrics::resize(int species) {
   for (auto* v : {&population, &births, &kills, &deaths_combat, &deaths_hazard, &deaths_age,
@@ -177,4 +177,4 @@ void Engine::kill_ant(int slot, DeathCause cause, int killer_species) {
   pending_deaths_.push_back({slot, cause, killer_species});
 }
 
-}  // namespace antsim
+}  // namespace formicae

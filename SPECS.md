@@ -324,16 +324,16 @@ The project has four functional modules and one integration module. Each has one
 
 | Module | Language | Responsibility | Directory / files | Needs | Owner |
 | --- | --- | --- | --- | --- | --- |
-| **M1 Core Engine** | C++ | Grid layers, tick pipeline (§3), RNG, ant slot storage, pheromone deposit/decay/diffusion, food spawning, metrics counters, save/load | `engine/include/antsim/{types,config,rng,grid,engine}.hpp`, `engine/src/{engine,pheromones,food,io}.cpp` | nothing | P1 |
-| **M2 Entity & AI** | C++ | Species and caste tables, `Ant` struct, state machine, sensing, movement, deposits (§5); combat, hazards, colony lifecycle, death handling (§6–7) | `engine/include/antsim/{species,ant,colony,ai,combat}.hpp`, `engine/src/{ai,colony}.cpp` | M1 grid API (§9.4) | P2 (AI), P3 (combat, colonies) |
-| **M3 Environment Generator** | Python | `generate_map` (§8) | `python/antsim_ui/mapgen/` | nothing | P5 |
-| **M4 Frontend & Analytics** | Python | PyGame rendering, input, inspector, time control, Matplotlib graphs, CSV export (§10) | `python/antsim_ui/{ui,analytics}/` | module `antsim` or its mock; M3 | P6 (UI), P5 (analytics) |
-| **M0 Integration** | C++ / Python / CMake | pybind11 bindings, build and packaging, config schema and loader, mock engine, CI | `engine/bindings/module.cpp`, `CMakeLists.txt`, `pyproject.toml`, `python/antsim_ui/config.py`, `python/antsim_mock.py` | M1, M2 | P4 |
+| **M1 Core Engine** | C++ | Grid layers, tick pipeline (§3), RNG, ant slot storage, pheromone deposit/decay/diffusion, food spawning, metrics counters, save/load | `engine/include/formicae/{types,config,rng,grid,engine}.hpp`, `engine/src/{engine,pheromones,food,io}.cpp` | nothing | P1 |
+| **M2 Entity & AI** | C++ | Species and caste tables, `Ant` struct, state machine, sensing, movement, deposits (§5); combat, hazards, colony lifecycle, death handling (§6–7) | `engine/include/formicae/{species,ant,colony,ai,combat}.hpp`, `engine/src/{ai,colony}.cpp` | M1 grid API (§9.4) | P2 (AI), P3 (combat, colonies) |
+| **M3 Environment Generator** | Python | `generate_map` (§8) | `python/formicae_ui/mapgen/` | nothing | P5 |
+| **M4 Frontend & Analytics** | Python | PyGame rendering, input, inspector, time control, Matplotlib graphs, CSV export (§10) | `python/formicae_ui/{ui,analytics}/` | module `formicae` or its mock; M3 | P6 (UI), P5 (analytics) |
+| **M0 Integration** | C++ / Python / CMake | pybind11 bindings, build and packaging, config schema and loader, mock engine, CI | `engine/bindings/module.cpp`, `CMakeLists.txt`, `pyproject.toml`, `python/formicae_ui/config.py`, `python/formicae_mock.py` | M1, M2 | P4 |
 
 Data flow:
 
 ```text
-M3 generate_map --MapData--> [antsim.Simulation = M0 bindings over M1 + M2] --snapshots--> M4 UI + analytics
+M3 generate_map --MapData--> [formicae.Simulation = M0 bindings over M1 + M2] --snapshots--> M4 UI + analytics
                                          ^------------------- controls (set_param, spawn_food, ...) ---|
 config JSON --> M0 loader --> engine structs (species, terrain, params);  M3 and M4 read their own sections
 ```
@@ -349,9 +349,9 @@ config JSON --> M0 loader --> engine structs (species, terrain, params);  M3 and
 | I5 | file → M0, M3, M4 | `load_config(path) -> dict` | the JSON configuration (§11) | at start |
 | I6 | M4 internal | `Analytics.record / render / export_csv` (§9.5) | metrics samples, plots, CSV | every 10 ticks / 1 s / on demand |
 
-### 9.3 Python API of module `antsim` (I1, I3, I4)
+### 9.3 Python API of module `formicae` (I1, I3, I4)
 
-The module exposes `antsim.__version__` and `antsim.API_VERSION = 1`. All calls must come from one thread. While `step` runs, it releases the GIL so the UI thread may redraw, but any other call on the same `Simulation` then raises `RuntimeError("busy")`. Bad arguments raise `ValueError`; calling in the wrong state raises `RuntimeError`; `step` itself never raises.
+The module exposes `formicae.__version__` and `formicae.API_VERSION = 1`. All calls must come from one thread. While `step` runs, it releases the GIL so the UI thread may redraw, but any other call on the same `Simulation` then raises `RuntimeError("busy")`. Bad arguments raise `ValueError`; calling in the wrong state raises `RuntimeError`; `step` itself never raises.
 
 | Method | Behavior |
 | --- | --- |
@@ -418,7 +418,7 @@ Each `colonies()` record is 32 bytes:
 The hot path uses header-only inline functions: no virtual calls, no exceptions, no allocation inside a tick. M1 provides, in `grid.hpp` and `rng.hpp`:
 
 ```cpp
-namespace antsim {
+namespace formicae {
 inline int  idx(int x, int y);                 // y * W + x
 inline bool in_bounds(int x, int y);
 inline bool passable(int i);                   // terrain passable (hazards count as passable)
@@ -454,7 +454,7 @@ M2 may read species and caste data only through `species_of(ant)` (the resolved 
 | `Analytics.render(size: tuple[int, int]) -> pygame.Surface` | M4 | Draws the graphs with the Agg backend; called at most once per second |
 | `Analytics.export_csv(path: str) -> None` | M4 | Writes the full history with the columns of §10 |
 
-**Mock engine.** `python/antsim_mock.py` implements the whole API of §9.3 with random-walking dummy ants and the same dtypes, shapes and errors, so M3 and M4 can be developed and tested from week 1 without the C++ build.
+**Mock engine.** `python/formicae_mock.py` implements the whole API of §9.3 with random-walking dummy ants and the same dtypes, shapes and errors, so M3 and M4 can be developed and tested from week 1 without the C++ build.
 
 ## 10. Frontend and analytics
 
@@ -472,25 +472,25 @@ M2 may read species and caste data only through `species_of(ant)` (the resolved 
 
 ## 11. Configuration
 
-One JSON file (`configs/default.json`) with sections `world`, `time`, `pheromone`, `food`, `terrain[]`, `species[]`, `castes[]`, `colony`, `hostility`, `render`, `analytics`, `seeds`. Validated at load: unknown keys rejected, ranges checked, `S ≤ 8`, a warning when ants exceed 25% of passable cells. CLI: `python -m antsim_ui --config configs/default.json --map-seed 42 --sim-seed 7`.
+One JSON file (`configs/default.json`) with sections `world`, `time`, `pheromone`, `food`, `terrain[]`, `species[]`, `castes[]`, `colony`, `hostility`, `render`, `analytics`, `seeds`. Validated at load: unknown keys rejected, ranges checked, `S ≤ 8`, a warning when ants exceed 25% of passable cells. CLI: `python -m formicae_ui --config configs/default.json --map-seed 42 --sim-seed 7`.
 
 ## 12. Repository, build, conventions
 
 ```
-antsim/
+formicae/
   CMakeLists.txt  pyproject.toml            # scikit-build-core
-  engine/include/antsim/   types.hpp config.hpp rng.hpp grid.hpp
+  engine/include/formicae/   types.hpp config.hpp rng.hpp grid.hpp
                            species.hpp ant.hpp colony.hpp ai.hpp combat.hpp engine.hpp
   engine/src/              engine.cpp pheromones.cpp food.cpp colony.cpp ai.cpp io.cpp
   engine/bindings/module.cpp
   engine/tests/            (Catch2, optional)
-  python/antsim_ui/        __main__.py config.py mapgen/ ui/ analytics/
-  python/antsim_mock.py
+  python/formicae_ui/        __main__.py config.py mapgen/ ui/ analytics/
+  python/formicae_mock.py
   configs/default.json   docs/SPEC.md   tests/ (pytest)
 ```
 
 - **Build:** CMake ≥ 3.26, GCC ≥ 12 or Clang ≥ 15, `-std=c++20 -O3 -Wall -Wextra`, `-march=native` behind an option; pybind11 via FetchContent or pip. Install: `pip install -e .`.
-- **C++:** namespace `antsim`; types `PascalCase`, functions/vars `snake_case`, constants `UPPER_SNAKE`; `clang-format` (LLVM style); no virtuals/exceptions/allocation in the tick path.
+- **C++:** namespace `formicae`; types `PascalCase`, functions/vars `snake_case`, constants `UPPER_SNAKE`; `clang-format` (LLVM style); no virtuals/exceptions/allocation in the tick path.
 - **Python:** type hints, `ruff` (lint + format), NumPy docstrings on public functions.
 
 ## 13. Team split and timeline

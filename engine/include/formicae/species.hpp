@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "antsim/config.hpp"
+#include "formicae/config.hpp"
 
-namespace antsim {
+namespace formicae {
 
 // Species stats with the caste multipliers already applied. The tick loop does one lookup per ant.
 using ResolvedStats = SpeciesStats;
@@ -27,4 +27,4 @@ class SpeciesTable {
   int species_count_ = 0;
 };
 
-}  // namespace antsim
+}  // namespace formicae

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from antsim_ui.types import Terrain
+from formicae_ui.types import Terrain
 
 
 class MapGenError(RuntimeError):

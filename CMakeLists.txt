@@ -15,16 +15,16 @@ option(FORMICAE_BUILD_TESTS "Build C++ tests" OFF)
 
 # ---- C++ engine (modules M1 + M2) ---------------------------------------------------------------
 add_library(formicae_engine STATIC
-  engine/src/config.cpp
-  engine/src/grid.cpp
-  engine/src/engine.cpp
-  engine/src/pheromones.cpp
-  engine/src/food.cpp
-  engine/src/io.cpp
-  engine/src/species.cpp
-  engine/src/ai.cpp
-  engine/src/colony.cpp
-  engine/src/combat.cpp
+        engine/src/config.cpp
+        engine/src/grid.cpp
+        engine/src/engine.cpp
+        engine/src/pheromones.cpp
+        engine/src/food.cpp
+        engine/src/io.cpp
+        engine/src/species.cpp
+        engine/src/ai.cpp
+        engine/src/colony.cpp
+        engine/src/combat.cpp
 )
 target_include_directories(formicae_engine PUBLIC engine/include)
 target_compile_features(formicae_engine PUBLIC cxx_std_20)
@@ -50,4 +50,7 @@ if(FORMICAE_BUILD_TESTS)
   add_executable(engine_smoke engine/tests/engine_smoke.cpp)
   target_link_libraries(engine_smoke PRIVATE formicae_engine)
   add_test(NAME engine_smoke COMMAND engine_smoke)
+  add_executable(p3_checks engine/tests/p3_checks.cpp)
+  target_link_libraries(p3_checks PRIVATE formicae_engine)
+  add_test(NAME p3_checks COMMAND p3_checks)
 endif()

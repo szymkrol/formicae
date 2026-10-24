@@ -67,7 +67,7 @@ Camera, CSV export, and a basic renderer + HUD so the UI already runs. Search th
 | P3 | `colony_update`, `on_colony_destroyed`, `find_target`, `resolve_attack`, `on_ant_death`, `spawn_food_step` |
 | P4 | full config validation, `save`/`load`, inspector and control panels, CI hardening |
 | P5 | map generator steps 1-7, `Analytics.render` |
-| P6 | speed and quality of `Renderer.render`, remaining hotkeys, sidebar layout, real ticks/s display |
+| P6 | polish / stretch (caste shades), 10k-ant FPS checks on the real engine, wire Tab/S with P4/P5 |
 
 ## Small differences from the specification text
 

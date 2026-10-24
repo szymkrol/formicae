@@ -9,4 +9,4 @@ jobs:
       - run: uv sync                 # Python from .python-version (3.13; bump to 3.15 per spec D8)
       - run: uv run pytest -q
       - run: make cpp-test
-      - run: SDL_VIDEODRIVER=dummy uv run antsim-ui --mock --frames 60
+      - run: SDL_VIDEODRIVER=dummy uv run formicae-ui --mock --frames 60

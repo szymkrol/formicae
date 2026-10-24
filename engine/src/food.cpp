@@ -55,9 +55,41 @@ void Engine::set_param(const std::string& name, double value) {
 }
 
 void Engine::spawn_food_step() {
-  // TODO(P3): every cfg_.food.spawn_interval ticks, with probability cfg_.food.spawn_prob, place a
-  // cluster (radius, volume, density per spec 7.4) at a random passable non-hill cell, respecting
-  // cfg_.food.max_food_cells. Use rng_ only, so runs stay deterministic.
+  const FoodParams& fp = cfg_.food;
+  if (tick_ == 0 || fp.spawn_interval <= 0 || tick_ % static_cast<uint64_t>(fp.spawn_interval) != 0) return;
+  if (rng_.next_float() >= fp.spawn_prob) return;
+
+  int food_cells = 0;
+  for (float v : grid_.food_volume) food_cells += v > 0.0f;
+  if (food_cells >= fp.max_food_cells) return;
+
+  // Random passable non-hill center; give up after a few tries on very crowded maps.
+  constexpr int MAX_TRIES = 64;
+  int center = -1;
+  for (int t = 0; t < MAX_TRIES && center < 0; ++t) {
+    const int cell = rng_.next_int(grid_.cells());
+    if (grid_.is_passable(cell) && grid_.hill_at(cell) == NO_HILL) center = cell;
+  }
+  if (center < 0) return;
+
+  const int r_min = std::clamp(fp.cluster_radius_min, 0, 10);
+  const int r_max = std::clamp(fp.cluster_radius_max, r_min, 10);
+  const int radius = r_min + rng_.next_int(r_max - r_min + 1);
+  const float density = fp.density_min + (fp.density_max - fp.density_min) * rng_.next_float();  // one food type per cluster
+
+  const int cx = grid_.x_of(center), cy = grid_.y_of(center);
+  for (int dy = -radius; dy <= radius; ++dy)
+    for (int dx = -radius; dx <= radius; ++dx) {
+      if (dx * dx + dy * dy > radius * radius || !grid_.in_bounds(cx + dx, cy + dy)) continue;
+      const int i = grid_.idx(cx + dx, cy + dy);
+      if (!grid_.is_passable(i) || grid_.hill_at(i) != NO_HILL) continue;
+      const float volume = fp.volume_min + (fp.volume_max - fp.volume_min) * rng_.next_float();
+      if (grid_.food_volume[i] <= 0.0f) {
+        if (food_cells >= fp.max_food_cells) continue;  // keep the global cap strict
+        ++food_cells;
+      }
+      add_food(i, volume, density);
+    }
 }
 
 }  // namespace formicae

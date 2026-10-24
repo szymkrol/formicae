@@ -212,9 +212,9 @@ class App:
                 self.time.toggle_pause()
             elif event.key == pygame.K_n:
                 self.time.request_single_step()
-            elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
+            elif event.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
                 self.time.faster()
-            elif event.key == pygame.K_minus:
+            elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
                 self.time.slower()
             elif event.key == pygame.K_p:
                 self.overlay.show_pheromones = not self.overlay.show_pheromones

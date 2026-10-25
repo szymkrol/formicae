@@ -49,7 +49,7 @@ about the compiler: install `build-essential` (or `clang`). To use Python 3.15 l
 | `engine/include/formicae/{species,ant,ai}.hpp`, `engine/src/{ai,species}.cpp` | M2 AI | P2 | (WRITE HERE) |
 | `engine/include/formicae/{colony,combat}.hpp`, `engine/src/{colony,combat,food}.cpp` | M2 Combat, colonies, food | P3 | Kacper |
 | `engine/bindings/`, `CMakeLists.txt`, `pyproject.toml`, `python/formicae_ui/config.py`, `python/formicae_mock.py`, `engine/src/io.cpp` | M0 Integration | P4 | Jacek |
-| `python/formicae_ui/mapgen/`, `python/formicae_ui/analytics/` | M3 Map generator, analytics | P5 | (WRITE HERE) |
+| `python/formicae_ui/mapgen/`, `python/formicae_ui/analytics/` | M3 Map generator, analytics | P5 | Kuba |
 | `python/formicae_ui/ui/` | M4 UI | P6 (panels: P4) | Maks |
 
 ## What exists and what is a TODO

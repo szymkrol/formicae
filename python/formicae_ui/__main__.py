@@ -1,4 +1,5 @@
 """Command line entry point: python -m formicae_ui --config configs/default.json --map-seed 42"""
+
 from __future__ import annotations
 
 import argparse
@@ -12,7 +13,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", default="configs/default.json")
     ap.add_argument("--map-seed", type=int, default=42)
     ap.add_argument("--sim-seed", type=int, default=None, help="overrides seeds.sim_seed")
-    ap.add_argument("--mock", action="store_true", help="use formicae_mock instead of the C++ engine")
+    ap.add_argument(
+        "--mock", action="store_true", help="use formicae_mock instead of the C++ engine"
+    )
     ap.add_argument("--frames", type=int, default=None, help="exit after N frames (smoke test)")
     args = ap.parse_args(argv)
 

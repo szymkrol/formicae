@@ -472,7 +472,7 @@ M2 may read species and caste data only through `species_of(ant)` (the resolved 
 
 ## 11. Configuration
 
-One JSON file (`configs/default.json`) with sections `world`, `time`, `pheromone`, `food`, `terrain[]`, `species[]`, `castes[]`, `colony`, `hostility`, `render`, `analytics`, `seeds`. Validated at load: unknown keys rejected, ranges checked, `S ≤ 8`, a warning when ants exceed 25% of passable cells. CLI: `python -m formicae_ui --config configs/default.json --map-seed 42 --sim-seed 7`.
+One JSON file (`configs/default.json`) with sections `world`, `time`, `pheromone`, `food`, `terrain[]`, `species[]` (each species may contain `castes[]`), `colony`, `hostility`, `render`, `analytics`, and `seeds`. Validated at load: unknown keys rejected, ranges checked, `S ≤ 8`. CLI: `python -m formicae_ui --config configs/default.json --map-seed 42 --sim-seed 7`.
 
 ## 12. Repository, build, conventions
 

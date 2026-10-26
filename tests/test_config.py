@@ -1,9 +1,8 @@
 import json
-import warnings
 from pathlib import Path
 
 import pytest
-from formicae_ui.config import ConfigError, load_config, validate_config, warn_if_overcrowded
+from formicae_ui.config import ConfigError, load_config, validate_config
 
 DEFAULT = Path(__file__).parent.parent / "configs" / "default.json"
 
@@ -120,16 +119,6 @@ def test_load_config_raises_config_error_for_invalid_values(tmp_path):
 
     with pytest.raises(ConfigError, match="world.width"):
         load_config(path)
-
-
-def test_overcrowding_warning_uses_passable_cell_count():
-    with pytest.warns(UserWarning, match="exceeds 25%"):
-        warn_if_overcrowded(26, 100)
-
-    with warnings.catch_warnings(record=True) as recorded:
-        warnings.simplefilter("always")
-        warn_if_overcrowded(25, 100)
-    assert not recorded
 
 
 @pytest.mark.parametrize("value", [None, [], "config"])

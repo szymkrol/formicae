@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -412,16 +411,6 @@ def validate_config(cfg: Any) -> list[str]:
                         problems.append(f"hostility[{row_index}][{col_index}] must be 0 or 1")
 
     return problems
-
-
-def warn_if_overcrowded(max_ants_total: int, passable_cells: int) -> None:
-    """Warn when the configured ant cap exceeds a quarter of the passable map cells."""
-    if max_ants_total > passable_cells * 0.25:
-        warnings.warn(
-            f"max_ants_total ({max_ants_total}) exceeds 25% of passable cells ({passable_cells})",
-            UserWarning,
-            stacklevel=2,
-        )
 
 
 def _check_object(value: Any, path: str, allowed: set[str], problems: list[str]) -> bool:

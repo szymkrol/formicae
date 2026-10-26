@@ -1,10 +1,14 @@
 """Command line entry point: python -m formicae_ui --config configs/default.json --map-seed 42"""
+
 from __future__ import annotations
 
 import argparse
 
-from formicae_ui.config import load_config
+import numpy as np
+
+from formicae_ui.config import load_config, warn_if_overcrowded
 from formicae_ui.mapgen import MapGenParams, generate_map
+from formicae_ui.types import Terrain
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,6 +39,12 @@ def main(argv: list[str] | None = None) -> int:
         species_ids=species_ids,
         params=MapGenParams(),
     )
+    passable_cells = int(
+        np.count_nonzero(
+            (map_data["terrain"] != Terrain.ROCK) & (map_data["terrain"] != Terrain.WATER)
+        )
+    )
+    warn_if_overcrowded(cfg.get("max_ants_total", 150000), passable_cells)
     sim = formicae.Simulation(cfg)
     sim.initialize(map_data)
 

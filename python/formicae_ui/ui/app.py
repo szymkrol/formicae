@@ -13,6 +13,9 @@ WINDOW_SIZE = (1280, 800)
 SIDEBAR_WIDTH = 280
 TARGET_FPS = 60
 ANALYTICS_EVERY_TICKS = 10
+ANALYTICS_REDRAW_SECONDS = 1.0
+ANALYTICS_PANEL_SIZE = (640, 440)
+ANALYTICS_PANEL_MARGIN = 12
 CHANNEL_NAMES = {Channel.HOME: "HOME", Channel.FOOD: "FOOD", Channel.DANGER: "DANGER"}
 
 # Manual spawn-food defaults (mid-range of config food.volume/density/radius).
@@ -40,6 +43,9 @@ class App:
         ]
         self.analytics = Analytics(n_species=self.n_species, n_colonies=len(map_data["colonies"]))
         self._last_recorded_tick = -1
+        self.show_analytics = False
+        self._analytics_surface = None
+        self._analytics_drawn_at = float("-inf")
         self.spawn_food_mode = False
         self._renderer: Renderer | None = None
 
@@ -71,8 +77,9 @@ class App:
             self._advance(dt)
             renderer.render(SimViews.from_sim(self.sim), self.overlay)
             self._draw_hud(screen, font, font_small, clock)
-            # TODO(P4): inspector and control panels; TODO(P5): analytics panel on Tab
-            # (self.analytics.render(size) at most once per second).
+            if self.show_analytics:
+                self._draw_analytics(screen)
+            # TODO(P4): inspector and control panels.
             pygame.display.flip()
             frames += 1
             if max_frames is not None and frames >= max_frames:
@@ -138,12 +145,28 @@ class App:
             "1/2/3 channel  [ ] species",
             "F spawn food   R reset",
             "wheel zoom     drag pan",
-            "E export CSV",
+            "E export CSV   Tab analytics",
             "click: spawn food when F on",
         ]
         for text in help_lines:
             screen.blit(font_small.render(text, True, (160, 160, 170)), (x, y))
             y += 16
+
+    def _draw_analytics(self, screen) -> None:
+        """Analytics panel (Tab): graphs re-rendered at most once per second (spec 9.5)."""
+        import pygame
+
+        now = time.perf_counter()
+        if self._analytics_surface is None or now - self._analytics_drawn_at >= (
+            ANALYTICS_REDRAW_SECONDS
+        ):
+            self._analytics_surface = self.analytics.render(ANALYTICS_PANEL_SIZE)
+            self._analytics_drawn_at = now
+        x = ANALYTICS_PANEL_MARGIN
+        y = WINDOW_SIZE[1] - ANALYTICS_PANEL_MARGIN - self._analytics_surface.get_height()
+        frame = self._analytics_surface.get_rect(topleft=(x, y)).inflate(4, 4)
+        pygame.draw.rect(screen, (90, 90, 100), frame, width=2)
+        screen.blit(self._analytics_surface, (x, y))
 
     def _advance(self, dt: float) -> None:
         """Run the engine for this frame within the simulation budget (spec section 10)."""
@@ -189,6 +212,8 @@ class App:
         self.sim.reset()
         self.time.reset_stats()
         self._last_recorded_tick = -1
+        self.analytics.clear()
+        self._analytics_surface = None
         if self._renderer is not None:
             self._renderer.invalidate_caches()
 
@@ -237,7 +262,10 @@ class App:
                 self.spawn_food_mode = not self.spawn_food_mode
             elif event.key == pygame.K_r:
                 self._reset_simulation()
-            # TODO(P4): S save snapshot; TODO(P5): Tab analytics panel
+            elif event.key == pygame.K_TAB:
+                self.show_analytics = not self.show_analytics
+                self._analytics_surface = None
+            # TODO(P4): S save snapshot
         elif event.type == pygame.MOUSEWHEEL:
             mx, my = pygame.mouse.get_pos()
             if mx < WINDOW_SIZE[0] - SIDEBAR_WIDTH:

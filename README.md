@@ -25,7 +25,7 @@ uv run formicae-ui --map-seed 7 --sim-seed 3 --config configs/default.json
 
 # 4. check
 uv run pytest                 # API tests: mock engine and the real C++ module
-make cpp-test                 # plain CMake build of the C++ engine + engine_smoke
+make cpp-test                 # plain CMake build and all C++ regression checks
 uv run ruff check .           # lint
 ```
 
@@ -41,33 +41,68 @@ about the compiler: install `build-essential` (or `clang`). To use Python 3.15 l
 `.python-version` and `requires-python` once NumPy, pygame-ce and Matplotlib publish wheels for it
 (spec D8), then run `uv sync`.
 
+### Windows (PowerShell)
+
+Install uv and Visual Studio Build Tools with the **Desktop development with C++** workload
+(MSVC and a Windows SDK). CMake detects the installed compiler; `make` is not required.
+The native Windows build also supports MSVC with C++20 (Visual Studio 2019 16.11 or newer).
+`FORMICAE_NATIVE` is only available with GCC or Clang using `-march=native`.
+
+Run these commands from the repository root:
+
+```powershell
+uv sync --locked
+uv run formicae-ui --mock
+# Use the C++ engine:
+uv run formicae-ui
+
+uv run pytest
+uv run ruff check .
+
+# Standalone C++ checks; Debug keeps assertions enabled.
+uv run cmake -S . -B build -DFORMICAE_BUILD_PYTHON=OFF -DFORMICAE_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+uv run cmake --build build --config Debug --parallel
+uv run ctest --test-dir build -C Debug --output-on-failure
+
+$env:SDL_VIDEODRIVER = "dummy"
+try {
+    uv run formicae-ui --mock --frames 60
+} finally {
+    Remove-Item Env:SDL_VIDEODRIVER
+}
+```
+
+The environment lives in `.venv/`; select `.venv\Scripts\python.exe` as your editor's Python
+interpreter. Activation is optional when using `uv run`.
+
 ## Layout and owners (spec sections 9.1 and 12)
 
-| Path | Module | Owner | Person |
-|---|---|---|---|
-| `engine/include/formicae/{types,config,rng,grid,engine}.hpp`, `engine/src/{engine,pheromones,grid,config}.cpp` | M1 Core engine | P1 | Szymon |
-| `engine/include/formicae/{species,ant,ai}.hpp`, `engine/src/{ai,species}.cpp` | M2 AI | P2 | (WRITE HERE) |
-| `engine/include/formicae/{colony,combat}.hpp`, `engine/src/{colony,combat,food}.cpp` | M2 Combat, colonies, food | P3 | Kacper |
-| `engine/bindings/`, `CMakeLists.txt`, `pyproject.toml`, `python/formicae_ui/config.py`, `python/formicae_mock.py`, `engine/src/io.cpp` | M0 Integration | P4 | Jacek |
-| `python/formicae_ui/mapgen/`, `python/formicae_ui/analytics/` | M3 Map generator, analytics | P5 | Kuba |
-| `python/formicae_ui/ui/` | M4 UI | P6 (panels: P4) | Maks |
+| Path                                                                                                                                   | Module                      | Owner           | Person   |
+| -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------- | -------- |
+| `engine/include/formicae/{types,config,rng,grid,engine}.hpp`, `engine/src/{engine,pheromones,grid,config}.cpp`                         | M1 Core engine              | P1              | Szymon   |
+| `engine/include/formicae/{species,ant,ai}.hpp`, `engine/src/{ai,species}.cpp`                                                          | M2 AI                       | P2              | Kacper K |
+| `engine/include/formicae/{colony,combat}.hpp`, `engine/src/{colony,combat,food}.cpp`                                                   | M2 Combat, colonies, food   | P3              | Kacper   |
+| `engine/bindings/`, `CMakeLists.txt`, `pyproject.toml`, `python/formicae_ui/config.py`, `python/formicae_mock.py`, `engine/src/io.cpp` | M0 Integration              | P4              | Jacek    |
+| `python/formicae_ui/mapgen/`, `python/formicae_ui/analytics/`                                                                          | M3 Map generator, analytics | P5              | Kuba     |
+| `python/formicae_ui/ui/`                                                                                                               | M4 UI                       | P6 (panels: P4) | Maks     |
 
 ## What exists and what is a TODO
 
 Everything compiles and `pytest` passes. Implemented: types and enums, RNG (PCG32), grid layers,
-config defaults and validation skeleton, resolved species/caste table, ant slot storage, the tick
+config defaults and validation skeleton, resolved species/caste table, ant AI (movement, foraging,
+flee/fight transitions, hazards and pheromone trails), ant slot storage, the tick
 pipeline (spec section 3), baseline pheromone decay and hill beacon, food add/spawn/terrain/param
 controls, the whole pybind11 API with zero-copy read-only views, the mock engine, TimeControl,
 Camera, CSV export, and a basic renderer + HUD so the UI already runs. Search the code for `TODO(P1)` ... `TODO(P6)` to find each person's work:
 
-| Dev | First tasks |
-|---|---|
-| P1 | diffusion, per-channel factor planes, slot compaction, metrics food totals, determinism hash |
-| P2 | `ant_update` (priority table 5.3, movement 5.4) |
-| P3 | `colony_update`, `on_colony_destroyed`, `find_target`, `resolve_attack`, `on_ant_death`, `spawn_food_step` |
-| P4 | full config validation, `save`/`load`, inspector and control panels, CI hardening |
-| P5 | map generator steps 1-7, `Analytics.render` |
-| P6 | polish / stretch (caste shades), 10k-ant FPS checks on the real engine, wire Tab/S with P4/P5 |
+| Dev | First tasks                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------------------- |
+| P1  | diffusion, per-channel factor planes, slot compaction, metrics food totals, determinism hash               |
+| P2  | AI implemented and covered by `ai_checks`; remaining work: species tuning and trail-quality measurements   |
+| P3  | `colony_update`, `on_colony_destroyed`, `find_target`, `resolve_attack`, `on_ant_death`, `spawn_food_step` |
+| P4  | full config validation, `save`/`load`, inspector and control panels, CI hardening                          |
+| P5  | map generator steps 1-7, `Analytics.render`                                                                |
+| P6  | polish / stretch (caste shades), 10k-ant FPS checks on the real engine, wire Tab/S with P4/P5              |
 
 ## Small differences from the specification text
 

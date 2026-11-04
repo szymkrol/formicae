@@ -42,13 +42,16 @@ void test_spawning() {
   e.initialize(m);
 
   // Swarmer: 600 energy / 60 cost, one ant every spawn_cooldown + 1 ticks, stops when energy is gone.
-  e.step(200);
+  for (int tick = 0; tick < 200; ++tick) {
+    colony_update(e, 0);
+    colony_update(e, 1);
+  }
   assert(e.colonies()[0].population == 10);
   assert(e.colonies()[0].stored_energy < 60.0);
   // Tank: cost 400, only one affordable from 600.
   assert(e.colonies()[1].population == 1);
   assert(e.metrics().births[0] == 10 && e.metrics().births[1] == 1);
-  // Spawned ants stand on their own footprint.
+  // Isolate spawning from AI: every new ant starts on its own footprint.
   for (const Ant& a : e.ants()) assert(e.grid().hill_at(e.grid().idx(a.x, a.y)) == a.colony);
 }
 
@@ -60,7 +63,7 @@ void test_hill_full_postpones() {
   MapData m = open_map(16, 16);
   m.colonies = {{8, 8, 0}};
   e.initialize(m);
-  e.step(50);
+  for (int tick = 0; tick < 50; ++tick) colony_update(e, 0);
   assert(e.colonies()[0].population == 1);  // cell stays occupied -> no further spawn, energy kept
   assert(e.colonies()[0].stored_energy == 10000 - 60);
 }
@@ -133,6 +136,7 @@ void test_food_spawning() {
   cfg.food.spawn_interval = 5;
   cfg.food.spawn_prob = 1.0f;
   cfg.food.max_food_cells = 300;
+  cfg.colony.initial_energy = 0;  // isolate food spawning from foraging and combat drops
   auto run = [&](uint64_t seed) {
     cfg.sim_seed = seed;
     Engine e(cfg);

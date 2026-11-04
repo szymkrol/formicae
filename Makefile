@@ -12,10 +12,10 @@ run-mock:   ## UI with the mock engine (moving dots, no C++ needed)
 test:       ## Python tests (mock engine and, once built, the real module)
 	uv run pytest
 
-cpp-test:   ## build the C++ engine with plain CMake and run engine_smoke
+cpp-test:   ## build the C++ engine with plain CMake and run all C++ checks
 	uv run cmake -S . -B build -DFORMICAE_BUILD_TESTS=ON -Dpybind11_DIR="$$(uv run python -m pybind11 --cmakedir)"
 	uv run cmake --build build -j
-	./build/engine_smoke
+	uv run ctest --test-dir build --output-on-failure
 
 lint:
 	uv run ruff check .

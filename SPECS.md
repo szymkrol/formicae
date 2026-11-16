@@ -73,10 +73,12 @@ Fixed timestep: the engine knows nothing about wall-clock time. One `step()`:
 Channels per species: `HOME=0`, `FOOD=1`, `DANGER=2`. Values in `[0, 1]` (cap `P_MAX = 1`).
 
 - **Deposit:** `p = min(P_MAX, p + a)`.
-- **Decay (multiplicative):** `p *= (1 − ρ_c · decay_scale · evap_mod[cell])`, clamp factor to ≥ 0; if `p < 0.001` set `p = 0`. Precompute a per-channel factor plane when `decay_scale` changes; the loop becomes `p[i] *= f[i]`.
-- Defaults: `ρ_HOME = 0.003` (half-life ≈ 230 ticks), `ρ_FOOD = 0.008` (≈ 87), `ρ_DANGER = 0.03` (≈ 23).
-- **Diffusion (optional, default off):** `p' = p + D·(mean4(p) − p)`, `D ∈ [0, 0.2]`, double-buffered. Not needed for correctness; widens trails. Cost ≈ 5× decay, so it is skipped when `D = 0`.
-- **Hill beacon:** each tick, HOME of the owning species is set to `P_MAX` on all its footprint cells.
+- **Decay (multiplicative):** `p *= (1 − ρ_c · decay_scale · evap_mod[cell])`, clamp factor to ≥ 0; if `p < cutoff` set `p = 0`. Precompute a per-channel factor plane when `decay_scale` or terrain changes; the loop becomes `p[i] *= f[i]`.
+- **Default ρ (per channel, before `decay_scale`/`evap_mod`):** `ρ_HOME = 0.0015` (half-life ≈ 462 ticks on GRASS), `ρ_FOOD = 0.001` (≈ 693), `ρ_DANGER = 0.015` (≈ 46). Defaults are tuned for slower, more persistent trails; `decay_scale` (runtime, default 1.0) scales all channels together.
+- **Diffusion (optional):** `p' = p + D·(mean4(p) − p)`, `D ∈ [0, 0.2]`, double-buffered, applied before decay (interior cells use 4-neighbour mean; edges/corners retain their pre-diffusion value in the current implementation). Default `D = 0.03` (enabled) to spread and smooth trails; set `D = 0` to disable (skipped when 0). Cost ≈ 5× decay.
+- **Hill beacon:** after decay each tick, HOME of the owning species on every live hill footprint cell is set to `home_beacon` (`P_MAX`, 1.0).
+- **Alarm/event deposits (DANGER unless noted):** combat hit `hit_alarm = 0.4` to both involved species' DANGER at the target cell (§6); ant death `death_alarm = 0.5` to the victim's species (§6); ant on THORNS or while FLEEING `hazard_alarm = 0.3` per tick/step (deposited at the cell where the hazard/flee event occurs, §5.3). Trail deposits (HOME/FOOD) are described in §5.4.
+- **Key pheromone parameters (defaults):** `cutoff = 0.001`, `epsilon = 0.05`, `food_density_ref (D_REF) = 50`, `home_beacon = 1.0`, `grad_beta = 2.0` (Sobel movement bias, §5.4/§9.3). All except clamp bounds are configurable via JSON / runtime where exposed.
 
 ## 5. Ants
 
@@ -118,21 +120,23 @@ Each species is one entry in the species table. Stats are not copied into ants; 
 |  | `random_move_prob` | Chance of a uniformly random step | 0.10 | 0.05 | 0.20 |
 |  | `alpha` | Sensitivity to pheromone strength | 2.0 | 2.0 | 1.2 |
 |  | `forward_bonus` | Weight for keeping the current heading | 1.5 | 1.5 | 1.5 |
+| **Navigation** | `nav_beta` | Strength of nest-direction bias (0 disables) | 1.5 | 1.5 | 1.5 |
+|  | `noise_damp` | Trail-strength damping of random moves (0 disables) | 0.8 | 0.8 | 0.8 |
 | **Combat** | `damage` | Base damage per hit | 2 | 6 | 3 |
 |  | `armor` | Damage subtracted from incoming hits | 0 | 2 | 0.5 |
 |  | `accuracy` | Hit chance (0–1) | 0.7 | 0.6 | 0.7 |
 |  | `defend_while_carrying` | Fights back while carrying food | no | yes | no |
 | **Economy** | `cost` | Energy needed to spawn one ant | 60 | 400 | 200 |
 |  | `carry_capacity` | Food volume per trip | 2 | 6 | 4 |
-| **Pheromones** | `a_home` | HOME deposit strength | 0.04 | 0.04 | 0.04 |
-|  | `a_food` | FOOD deposit strength | 0.12 | 0.12 | 0.12 |
-|  | `trail_len_home` | Steps over which HOME deposits fade out | 400 | 400 | 400 |
-|  | `trail_len_food` | Steps over which FOOD deposits fade out | 400 | 400 | 400 |
+| **Pheromones** | `a_home` | HOME deposit strength | 0.06 | 0.06 | 0.06 |
+|  | `a_food` | FOOD deposit strength | 0.18 | 0.18 | 0.18 |
+|  | `trail_len_home` | Steps over which HOME deposits fade out | 600 | 600 | 600 |
+|  | `trail_len_food` | Steps over which FOOD deposits fade out | 600 | 600 | 600 |
 |  | `danger_k` | Reaction to DANGER: positive avoids, negative is attracted | 0.8 | −0.8 | 2.0 |
 |  | `danger_k_home` | Same, when near home (HOME ≥ 0.9) | −0.5 | −1.0 | 1.0 |
 | **Colony** | `orphan_loss` | Health fraction lost per tick with no live colony | 0.01 | 0.01 | 0.01 |
 
-Global constants shared by all species: `ε = 0.05` (floor added to pheromone values in movement weights) and `D_REF = 50` (food density that gives a full-strength FOOD trail).
+Global constants shared by all species (configurable): `ε = 0.05` (floor added to pheromone values in movement weights) and `D_REF = 50` (food density that gives a full-strength FOOD trail). Default species trail strengths/lengths are `a_home = 0.06`, `a_food = 0.18`, `trail_len_home = trail_len_food = 600` (tuned for stronger, longer, smoother trails together with §4 defaults).
 
 **Castes (stretch goal, data model ready from day one).** A caste is a role variant inside one species: it rescales that species' stats and tweaks a few behavior parameters. v1 ships only `STANDARD` (index 0) with all multipliers 1, so enabling castes later needs no format change.
 
@@ -184,7 +188,7 @@ States: `SEARCHING=0, RETURNING=1, FIGHTING=2, FLEEING=3, DEAD=255`. Rules are e
 
 ### 5.4 Movement
 
-Whenever the state table (§5.3) ends in "move", the ant goes through four steps in order: list the cells it may enter, choose one, check whether it can afford the step, then leave a pheromone mark. Ants have no vision or memory; the only information they use is the pheromone values of the four cells next to them.
+Whenever the state table (§5.3) ends in "move", the ant goes through four steps in order: list the cells it may enter, choose one, check whether it can afford the step, then leave a pheromone mark. Ants have no vision or memory; the only pheromone information they use is the followed channel in the 3×3 neighbourhood (current cell and 8 surrounding cells). Movement itself stays to the four neighbouring cells (N, E, S, W).
 
 | State | Follows channel | Deposits | Reacts to DANGER |
 | --- | --- | --- | --- |
@@ -193,12 +197,14 @@ Whenever the state table (§5.3) ends in "move", the ant goes through four steps
 | FLEEING | HOME | DANGER, 0.3 per step | no |
 | FIGHTING | does not move | – | – |
 
+Lost ants (movement-time behavior; state table unchanged): when `lost_mult > 0` and `trail_age >= lost_mult * trail_len_home` a SEARCHING ant carrying nothing follows HOME with nest-bias navigation and does not follow FOOD; when `trail_age >= lost_mult * trail_len_food` a RETURNING ant follows HOME with full nest-bias confidence (`conf=1`). `lost_mult == 0` disables lost behavior. Adjacent-food pickup, delivery, flee, attack, hazard, and orphan priorities remain as above; trail deposits fade to zero at `trail_age >= trail_len_*`.
+
 **Step 1 — Candidate cells.** The ant looks at its 4 neighbors (N, E, S, W). A neighbor is a candidate only if it is inside the map, has passable terrain, holds no other ant, and is not part of another species' hill. The cell behind the ant (opposite of `last_dir`) is excluded, which stops ants from jittering back and forth. It becomes allowed again only when nothing else is available, so ants can leave dead ends and back out of a head-on jam. With no candidates the ant waits and keeps its accumulated movement points.
 
-**Step 2 — Choose a cell.** With probability `random_move_prob` the ant picks a candidate uniformly; this keeps exploration alive and lets ants escape trail loops. Otherwise it draws a candidate at random with these weights:
+**Step 2 — Choose a cell.** Let `tau_max` be the maximum pheromone value of the followed channel over the ant's 3×3 neighbourhood (current cell and 8 surrounding cells, own species), with out-of-bounds treated as 0 and clamped to `[0, 1]`. Compute `s = min(1, tau_max / noise_tau_ref)` and `p_rand = random_move_prob * (1 - noise_damp_eff * s)`, where `noise_damp_eff = clamp(noise_damp * noise_damp_scale, 0, 1)`. Draw `r = rng.next_float()` unconditionally for the random-move gate; if `r < p_rand` pick a candidate uniformly. Otherwise draw a candidate at random with these weights:
 
 ```latex
-w = (\varepsilon + \tau)^{\alpha} \cdot h \cdot g
+w = (\varepsilon + \tau)^{\alpha} \cdot h \cdot g \cdot \mathrm{grad} \cdot \mathrm{nav}
 ```
 
 | Term | Meaning |
@@ -208,6 +214,11 @@ w = (\varepsilon + \tau)^{\alpha} \cdot h \cdot g
 | `α` | Species sensitivity: higher means the ant sticks to strong trails more strictly |
 | `h` | `forward_bonus` (1.5) if the cell continues the current heading, otherwise 1 |
 | `g` | `clamp(1 − k·d, 0.05, 3)`, where `d` is the DANGER value in the cell and `k` is `danger_k` (or `danger_k_home` when HOME at the ant's own cell is ≥ 0.9). Positive `k` makes the cell less attractive, negative `k` more |
+| `grad` | Sobel gradient bias on the followed channel: `grad = clamp(1 + grad_beta · align(dir), 0.5, 2.0)`, where `align(dir) = nx·DX[dir] + ny·DY[dir]`, `nx = gx/4`, `ny = gy/4`, `gx = (τ_NE + 2τ_E + τ_SE) − (τ_NW + 2τ_W + τ_SW)`, `gy = (τ_SW + 2τ_S + τ_SE) − (τ_NW + 2τ_N + τ_NE)` (x right, y down; out-of-bounds neighbours contribute 0). Controlled by `grad_beta` (default 2.0; 0 disables the bias). |
+| `nav` | Nest-direction bias when `beta_eff = nav_beta * nav_scale > 0` and the colony is alive: with nest center `(cx,cy)`, `hx=cx-ax`, `hy=cy-ay`, `inv=1/sqrt(d2)` if `d2=hx²+hy²>0` else neutral, `align_nav={-hy*inv,hx*inv,hy*inv,-hx*inv}` for `(N,E,S,W)` (y-down), `conf=1`, `k=beta_eff*conf*(1-tau_max)`, `nav[d]=clamp(1+k*align_nav[d], nav_min, nav_max)`. Applied for FLEEING, RETURNING, and lost SEARCHING ants carrying nothing (lost when `lost_mult > 0` and `trail_age >= lost_mult * trail_len_home`; `lost_mult == 0` disables). `nav[d]=1` for other SEARCHING ants, dead colony, or `d2==0`. |
+
+Edge cases: `(1-tau_max)` lets strong trails override nest bias; FLEEING uses full confidence; SEARCHING is unaffected by `nav`; dead colony or zero displacement yields neutral `nav`; saturated uniform trails yield `tau_max≈1` and suppress random/noise-damped deviation as specified.
+
 
 Example, a searching Swarmer (`α = 2`) heading north; south is excluded as the way back.
 
@@ -371,9 +382,12 @@ Runtime parameters for `set_param`:
 | Name | Range | Default |
 | --- | --- | --- |
 | `decay_scale` | 0–10 | 1.0 |
-| `diffusion` | 0–0.2 | 0.0 |
+| `diffusion` | 0–0.2 | 0.05 |
 | `food_spawn_prob` | 0–1 | 0.5 |
 | `food_spawn_interval` | 1–10 000 ticks | 50 |
+| `grad_beta` | 0–8 | 2.0 |
+| `nav_scale` | 0–4 | 1.0 |
+| `noise_damp_scale` | 0–2 | 1.0 |
 
 **Snapshot getters** return zero-copy, read-only NumPy views (`flags.writeable == False`) onto engine memory. A view is valid until the next `step`, `reset` or `load`; copy it with `np.array(view)` to keep it.
 
@@ -411,6 +425,8 @@ Each `colonies()` record is 32 bytes:
 | `kills` | int64 \[S\] | Ants killed by this species (credit to the attacker) |
 | `deaths_combat`, `deaths_hazard`, `deaths_age`, `deaths_orphan` | int64 \[S\] | Deaths of this species by cause |
 | `colonies_alive` | int64 \[S\] | Live colonies per species |
+| `deliveries` | int64 \[S\] | Cumulative successful food deliveries at friendly hills |
+| `return_steps_sum` | int64 \[S\] | Cumulative `trail_age` (return path length) accrued at delivery |
 | `food_total_volume`, `food_total_energy` | float64 | Sum over the map (energy = volume × density) |
 
 ### 9.4 C++ contract between M1 and M2 (I2)
@@ -466,13 +482,17 @@ M2 may read species and caste data only through `species_of(ant)` (the resolved 
 
 **Analytics:** sampled every 10 ticks into preallocated NumPy history (full run kept for CSV); Matplotlib uses the Agg backend, redrawn at most once per second into a pygame surface. Plots: population per species; stored energy per colony; combat deaths per 100 ticks per species (rolling); total food remaining.
 
-**CSV:** columns `tick, pop_s{i}, births_s{i}, kills_s{i}, deaths_combat_s{i}, deaths_hazard_s{i}, deaths_age_s{i}, energy_c{j}, food_total_energy`. **Casualty rate** = Δ deaths per tick over the sampling window, split by cause.
+**CSV:** columns `tick, pop_s{i}, births_s{i}, kills_s{i}, deaths_combat_s{i}, deaths_hazard_s{i}, deaths_age_s{i}, deaths_orphan_s{i}, colonies_alive_s{i}, deliveries_s{i}, return_steps_sum_s{i}, energy_c{j}, food_total_energy`. **Casualty rate** = Δ deaths per tick over the sampling window, split by cause. Mean return path length is `return_steps_sum_s{i} / deliveries_s{i}` when `deliveries_s{i} > 0`.
 
 **Heatmaps (stretch):** traffic (increment on entering a cell) and combat (increment per hit), shown with log-scaled color.
 
 ## 11. Configuration
 
-One JSON file (`configs/default.json`) with sections `world`, `time`, `pheromone`, `food`, `terrain[]`, `species[]` (each species may contain `castes[]`), `colony`, `hostility`, `render`, `analytics`, and `seeds`. Validated at load: unknown keys rejected, ranges checked, `S ≤ 8`. CLI: `python -m formicae_ui --config configs/default.json --map-seed 42 --sim-seed 7`.
+One JSON file (`configs/default.json`) with sections `world`, `time`, `pheromone`, `movement`, `food`, `terrain[]`, `species[]` (each species may contain `castes[]`), `colony`, `hostility`, `render`, `analytics`, and `seeds`. Validated at load: unknown keys rejected, ranges checked, `S ≤ 8`. Missing `movement` and missing per-species `nav_beta`/`noise_damp` use SPECS defaults (backward compatibility); present values and unknown keys are rejected. CLI: `python -m formicae_ui --config configs/default.json --map-seed 42 --sim-seed 7`.
+
+**`pheromone` keys (defaults):** `decay` = `[ρ_HOME, ρ_FOOD, ρ_DANGER]` in `[0,1]` (`[0.0015, 0.001, 0.015]`), `decay_scale` `[0,10]` (1.0), `diffusion` `[0,0.2]` (0.03), `cutoff` `[0,1]` (0.001), `hit_alarm` `[0,1]` (0.4), `death_alarm` `[0,1]` (0.5), `hazard_alarm` `[0,1]` (0.3), `home_beacon` `[0,1]` (1.0), `food_density_ref` `>0` (50), `epsilon` `>0` (0.05), `grad_beta` `[0,8]` (2.0). Semantics and alarm/deposit behaviour: §4, §5.4. Runtime-tunable subset: §9.3.
+
+**`movement` keys (defaults):** `nav_min` `>0` (0.3), `nav_max` `>=nav_min` (2.0), `noise_tau_ref` `>0` (0.3). Runtime-only scales `nav_scale` `[0,4]` (1.0) and `noise_damp_scale` `[0,2]` (1.0) are set via `set_param`, not JSON. Semantics: §5.4. Per-species navigation/noise/lost keys: `nav_beta` `>=0` (1.5), `noise_damp` `[0,1]` (0.8), `lost_mult` `>=0` (1.0; Nomad 2.0; `0` disables lost behavior for parity/debug), resolved per `[species][caste]` (§5.2).
 
 ## 12. Repository, build, conventions
 

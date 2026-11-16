@@ -47,6 +47,7 @@ def test_csv_matches_history(tmp_path):
         rows = list(csv.reader(fh))
     assert rows[0] == a.columns()
     assert rows[0][:3] == ["tick", "pop_s0", "pop_s1"]
+    assert "deliveries_s0" in rows[0] and "return_steps_sum_s1" in rows[0]
     assert rows[0][-1] == "food_total_energy"
     assert len(rows) == 6
     np.testing.assert_allclose(np.array(rows[1:], dtype=float), a.history())

@@ -3,10 +3,10 @@
 Lets M3 and M4 be developed from week 1 without the C++ build. Ants random-walk; nothing else is
 simulated. Owner: P4 (M0). Keep it in sync with engine/bindings/module.cpp (API_VERSION).
 """
+
 from __future__ import annotations
 
 import numpy as np
-
 from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE, NUM_CHANNELS, AntState
 
 __version__ = "0.1.0-mock"
@@ -16,6 +16,9 @@ _PARAMS = {
     "diffusion": (0.0, 0.2),
     "food_spawn_prob": (0.0, 1.0),
     "food_spawn_interval": (1, 10000),
+    "grad_beta": (0.0, 8.0),
+    "nav_scale": (0.0, 4.0),
+    "noise_damp_scale": (0.0, 2.0),
 }
 _DIRS = np.array([(0, -1), (1, 0), (0, 1), (-1, 0)])
 
@@ -127,7 +130,14 @@ class Simulation:
         if not (0 <= x < w and 0 <= y < h):
             raise ValueError("cell_info: cell out of bounds")
         hit = np.nonzero((self._ants["x"] == x) & (self._ants["y"] == y))[0]
-        ant = {k: self._ants[k][hit[0]].item() for k in ("id", "age", "colony", "species", "caste", "state", "health")} if len(hit) else None
+        ant = (
+            {
+                k: self._ants[k][hit[0]].item()
+                for k in ("id", "age", "colony", "species", "caste", "state", "health")
+            }
+            if len(hit)
+            else None
+        )
         return {
             "terrain": int(self._terrain[y, x]),
             "food_volume": float(self._food_volume[y, x]),
@@ -160,6 +170,7 @@ class Simulation:
             "deaths_combat": zeros(), "deaths_hazard": zeros(), "deaths_age": zeros(),
             "deaths_orphan": zeros(),
             "colonies_alive": np.bincount(self._colonies["species"], minlength=s).astype(np.int64),
+            "deliveries": zeros(), "return_steps_sum": zeros(),
             "food_total_volume": float(self._food_volume.sum()),
             "food_total_energy": float((self._food_volume * self._food_density).sum()),
         }

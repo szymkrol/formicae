@@ -30,9 +30,20 @@ Config test_config() {
     cfg.colony.initial_energy = 0;
     cfg.food.spawn_prob = 0;
     cfg.pheromone.decay_scale = 0;
+    cfg.pheromone.diffusion = 0.0f;
     cfg.max_ants_total = 100;
     cfg.species[0].stats.random_move_prob = 0;
     cfg.species[0].stats.accuracy = 1;
+    cfg.species[0].stats.a_home = 0.04f;
+    cfg.species[0].stats.a_food = 0.12f;
+    cfg.species[0].stats.trail_len_home = 400.0f;
+    cfg.species[0].stats.trail_len_food = 400.0f;
+    cfg.species[0].stats.nav_beta = 0.0f;
+    cfg.species[0].stats.noise_damp = 0.0f;
+    cfg.species[0].stats.lost_mult = 0.0f;
+    cfg.species[1].stats.nav_beta = 0.0f;
+    cfg.species[1].stats.noise_damp = 0.0f;
+    cfg.species[1].stats.lost_mult = 0.0f;
     return cfg;
 }
 
@@ -511,6 +522,92 @@ void test_resolved_castes() {
     assert(e.grid().food_volume[e.grid().idx(8, 8)] == 10);
 }
 
+void test_gradient_biases_uphill() {
+    auto run = [](float grad_beta) {
+        Config cfg = test_config();
+        cfg.species[0].stats.a_home = 0;
+        cfg.species[0].stats.a_food = 0;
+        cfg.pheromone.hazard_alarm = 0;
+        cfg.pheromone.grad_beta = grad_beta;
+        Engine e(cfg);
+        e.initialize(test_map());
+        const int slot = spawn(e, 8, 8);
+        e.deposit(0, Channel::Food, e.grid().idx(9, 8), 0.3f); // E
+        e.deposit(0, Channel::Food, e.grid().idx(8, 7), 0.3f); // N
+        e.deposit(0, Channel::Food, e.grid().idx(9, 7), 0.9f); // NE
+        e.deposit(0, Channel::Food, e.grid().idx(9, 9), 0.9f); // SE
+        return sample_moves(e, slot, AntState::Searching, static_cast<int>(Dir::N));
+    };
+
+    const auto counts0 = run(0.0f);
+    assert(counts0[0] > counts0[1]); // north wins with forward bonus and no gradient
+    const auto counts2 = run(2.0f);
+    assert(counts2[1] > counts2[0]); // east wins with uphill gradient
+    assert(counts2[1] > counts0[1]); // stronger east preference at default beta
+}
+
+void test_gradient_zero_on_uniform_field() {
+    auto run = [](float grad_beta) {
+        Config cfg = test_config();
+        cfg.species[0].stats.a_home = 0;
+        cfg.species[0].stats.a_food = 0;
+        cfg.pheromone.hazard_alarm = 0;
+        cfg.pheromone.grad_beta = grad_beta;
+        Engine e(cfg);
+        e.initialize(test_map());
+        const int slot = spawn(e, 8, 8);
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dy == 0)
+                    continue;
+                e.deposit(0, Channel::Food, e.grid().idx(8 + dx, 8 + dy), 0.5f);
+            }
+        return sample_moves(e, slot, AntState::Searching, static_cast<int>(Dir::N));
+    };
+
+    const auto counts0 = run(0.0f);
+    const auto counts2 = run(2.0f);
+    assert(counts0 == counts2); // uniform field => zero gradient
+}
+
+void test_gradient_clamp_finite_and_corner() {
+    {
+        Config cfg = test_config();
+        cfg.species[0].stats.a_home = 0;
+        cfg.species[0].stats.a_food = 0;
+        cfg.pheromone.hazard_alarm = 0;
+        cfg.pheromone.grad_beta = 8.0f;
+        Engine e(cfg);
+        e.initialize(test_map());
+        const int slot = spawn(e, 8, 8);
+        e.deposit(0, Channel::Food, e.grid().idx(9, 8), 1.0f);
+        e.deposit(0, Channel::Food, e.grid().idx(9, 7), 1.0f);
+        e.deposit(0, Channel::Food, e.grid().idx(9, 9), 1.0f);
+        e.deposit(0, Channel::Food, e.grid().idx(7, 8), 0.0f);
+        const auto counts = sample_moves(e, slot, AntState::Searching, static_cast<int>(Dir::N));
+        int total = 0;
+        for (int c : counts) {
+            assert(c >= 0 && c <= 12000);
+            total += c;
+        }
+        assert(total == 12000);
+    }
+
+    {
+        Config cfg = test_config();
+        cfg.pheromone.grad_beta = 2.0f;
+        Engine e(cfg);
+        e.initialize(test_map());
+        const int corner = spawn(e, 0, 0);
+        for (int tick = 0; tick < 8; ++tick)
+            ant_update(e, corner);
+        const Ant &a = e.ants()[corner];
+        assert(a.x >= 0 && a.x < 16 && a.y >= 0 && a.y < 16);
+        assert(e.grid().in_bounds(a.x, a.y));
+        assert(e.grid().occupant(e.grid().idx(a.x, a.y)) == corner);
+    }
+}
+
 void check_occupancy(const Engine &e) {
     int live = 0;
     for (int slot = 0; slot < static_cast<int>(e.ants().size()); ++slot) {
@@ -589,6 +686,62 @@ void test_foraging_pipeline_and_determinism() {
 
 } // namespace
 
+void test_lost_searcher_moves_toward_nest() {
+    Config cfg = test_config();
+    cfg.species[0].stats.lost_mult = 1.0f;
+    cfg.species[0].stats.trail_len_home = 50.0f;
+    cfg.species[0].stats.nav_beta = 3.0f;
+    cfg.pheromone.grad_beta = 0.0f;
+    cfg.colony.hill_radius = 0;
+    Engine e(cfg);
+    MapData m;
+    m.width = m.height = 64;
+    m.terrain.assign(64 * 64, static_cast<uint8_t>(Terrain::Grass));
+    m.food_volume.assign(64 * 64, 0);
+    m.food_density.assign(64 * 64, 0);
+    m.colonies = {{10, 10, 0}, {50, 50, 1}};
+    e.initialize(m);
+    const int slot = spawn(e, 40, 40, 0);
+    Ant &a = e.ants()[slot];
+    a.state = static_cast<uint8_t>(AntState::Searching);
+    a.trail_age = 60;
+    a.last_dir = static_cast<int8_t>(Dir::E);
+    auto dist2 = [&](const Ant &ant) {
+        const int dx = ant.x - 10;
+        const int dy = ant.y - 10;
+        return dx * dx + dy * dy;
+    };
+    int total0 = 0, total1 = 0;
+    const int trials = 200;
+    for (int t = 0; t < trials; ++t) {
+        Engine run(cfg);
+        run.initialize(m);
+        const int s2 = spawn(run, 40, 40, 0);
+        Ant &ra = run.ants()[s2];
+        ra.state = static_cast<uint8_t>(AntState::Searching);
+        ra.trail_age = 60;
+        ra.last_dir = static_cast<int8_t>(Dir::E);
+        total0 += dist2(ra);
+        for (int step = 0; step < 40; ++step)
+            ant_update(run, s2);
+        total1 += dist2(run.ants()[s2]);
+    }
+    assert(total1 < total0);
+}
+
+void test_lost_mult_zero_regression_simple() {
+    Config cfg = test_config();
+    cfg.species[0].stats.lost_mult = 0.0f;
+    Engine e(cfg);
+    e.initialize(test_map());
+    const int slot = spawn(e, 8, 8);
+    Ant &a = e.ants()[slot];
+    a.state = static_cast<uint8_t>(AntState::Searching);
+    a.trail_age = 10000;
+    ant_update(e, slot);
+    assert(e.ants()[slot].state == static_cast<uint8_t>(AntState::Searching));
+}
+
 int main() {
 #ifdef _MSC_VER
     // Report assertion failures to CTest instead of opening an unattended Windows dialog.
@@ -602,12 +755,17 @@ int main() {
     test_movement_weights();
     test_extreme_movement_weights();
     test_danger_weights();
+    test_gradient_biases_uphill();
+    test_gradient_zero_on_uniform_field();
+    test_gradient_clamp_finite_and_corner();
     test_pickup_and_delivery();
     test_trail_aging();
     test_combat_transitions();
     test_fleeing();
     test_hazards_and_deaths();
     test_resolved_castes();
+    test_lost_searcher_moves_toward_nest();
+    test_lost_mult_zero_regression_simple();
     test_foraging_pipeline_and_determinism();
     std::puts("ai_checks: OK");
 }

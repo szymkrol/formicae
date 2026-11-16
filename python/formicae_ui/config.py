@@ -13,6 +13,7 @@ SECTIONS = {
     "world",
     "time",
     "pheromone",
+    "movement",
     "food",
     "terrain",
     "species",
@@ -39,7 +40,9 @@ SECTION_KEYS = {
         "home_beacon",
         "food_density_ref",
         "epsilon",
+        "grad_beta",
     },
+    "movement": {"nav_min", "nav_max", "noise_tau_ref"},
     "food": {
         "spawn_interval",
         "spawn_prob",
@@ -75,6 +78,8 @@ SPECIES_KEYS = {
     "random_move_prob",
     "alpha",
     "forward_bonus",
+    "nav_beta",
+    "noise_damp",
     "damage",
     "armor",
     "accuracy",
@@ -88,6 +93,7 @@ SPECIES_KEYS = {
     "danger_k",
     "danger_k_home",
     "orphan_loss",
+    "lost_mult",
 }
 CASTE_KEYS = {
     "name",
@@ -113,6 +119,8 @@ SPECIES_RANGES = {
     "random_move_prob": (0, 1, False),
     "alpha": (0, None, False),
     "forward_bonus": (0, None, False),
+    "nav_beta": (0, None, False),
+    "noise_damp": (0, 1, False),
     "damage": (0, None, False),
     "armor": (0, None, False),
     "accuracy": (0, 1, False),
@@ -125,6 +133,7 @@ SPECIES_RANGES = {
     "danger_k": (None, None, False),
     "danger_k_home": (None, None, False),
     "orphan_loss": (0, 1, False),
+    "lost_mult": (0, None, False),
 }
 CASTE_RANGES = {
     "max_health_mul": (0, None, False),
@@ -205,6 +214,7 @@ def validate_config(cfg: Any) -> list[str]:
             ("home_beacon", 0, 1),
             ("food_density_ref", 0, None),
             ("epsilon", 0, None),
+            ("grad_beta", 0, 8),
         ):
             _check_number_range(
                 pheromone,
@@ -243,6 +253,30 @@ def validate_config(cfg: Any) -> list[str]:
         _check_order(food, "cluster_radius_min", "cluster_radius_max", "food", problems)
         _check_order(food, "volume_min", "volume_max", "food", problems)
         _check_order(food, "density_min", "density_max", "food", problems)
+
+    movement = cfg.get("movement")
+    if isinstance(movement, dict):
+        _check_number_range(
+            movement, "nav_min", "movement.nav_min", problems, 0, None, low_inclusive=False
+        )
+        _check_number_range(
+            movement, "nav_max", "movement.nav_max", problems, 0, None, low_inclusive=False
+        )
+        _check_number_range(
+            movement,
+            "noise_tau_ref",
+            "movement.noise_tau_ref",
+            problems,
+            0,
+            None,
+            low_inclusive=False,
+        )
+        if (
+            _is_finite_number(movement.get("nav_min"))
+            and _is_finite_number(movement.get("nav_max"))
+            and movement["nav_min"] > movement["nav_max"]
+        ):
+            problems.append("movement.nav_min must be <= movement.nav_max")
 
     colony = cfg.get("colony")
     if isinstance(colony, dict):
@@ -425,6 +459,10 @@ def _check_object(value: Any, path: str, allowed: set[str], problems: list[str])
 
 def _is_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_finite_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
 def _check_bool(data: dict[str, Any], key: str, path: str, problems: list[str]) -> None:

@@ -31,7 +31,7 @@ struct Metrics {
     uint64_t tick = 0;
     std::vector<int64_t> population, births, kills;
     std::vector<int64_t> deaths_combat, deaths_hazard, deaths_age, deaths_orphan;
-    std::vector<int64_t> colonies_alive;
+    std::vector<int64_t> colonies_alive, deliveries, return_steps_sum;
     double food_total_volume = 0, food_total_energy = 0;
     void resize(int species);
 };
@@ -49,7 +49,8 @@ class Engine {
 
     // --- runtime controls (I4); throw std::invalid_argument on bad input -----------------------
     void set_param(const std::string &name,
-                   double value); // decay_scale, diffusion, food_spawn_prob, food_spawn_interval
+                   double value); // decay_scale, diffusion, food_spawn_prob, food_spawn_interval,
+                                  // grad_beta, nav_scale, noise_damp_scale
     int spawn_food(int x, int y, int radius, float volume, float density); // returns cells changed
     void set_terrain(int x, int y, Terrain t);
 

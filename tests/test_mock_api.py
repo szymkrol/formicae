@@ -1,10 +1,9 @@
-"""API contract test: runs against the mock and, when built, against the real module (same checks)."""
+"""API contract test against mock and, when built, the real module."""
 from pathlib import Path
 
+import formicae_mock
 import numpy as np
 import pytest
-
-import formicae_mock
 from formicae_ui.config import load_config
 from formicae_ui.mapgen import generate_map
 from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE
@@ -54,14 +53,20 @@ def test_wrong_dtype_is_rejected(sim):
 def test_metrics_keys(sim):
     m = sim.metrics()
     for key in ("tick", "population", "births", "kills", "deaths_combat", "deaths_hazard",
-                "deaths_age", "deaths_orphan", "colonies_alive", "food_total_volume",
-                "food_total_energy"):
+                "deaths_age", "deaths_orphan", "colonies_alive", "deliveries",
+                "return_steps_sum", "food_total_volume", "food_total_energy"):
         assert key in m
 
 
 def test_set_param_range(sim):
     sim.set_param("decay_scale", 2.0)
+    sim.set_param("nav_scale", 2.0)
+    sim.set_param("noise_damp_scale", 1.5)
     with pytest.raises(ValueError):
         sim.set_param("decay_scale", 99)
+    with pytest.raises(ValueError):
+        sim.set_param("nav_scale", 5)
+    with pytest.raises(ValueError):
+        sim.set_param("noise_damp_scale", 3)
     with pytest.raises(ValueError):
         sim.set_param("nonsense", 1)

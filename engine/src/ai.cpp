@@ -13,6 +13,9 @@ namespace formicae {
 
 namespace {
 
+constexpr float kGradMin = 0.5f;
+constexpr float kGradMax = 2.0f;
+
 bool on_friendly_hill(const Engine &e, const Ant &a, int cell) {
     const int hill = e.grid().hill_at(cell);
     return hill != NO_HILL && e.colonies()[hill].alive && e.colonies()[hill].species == a.species;
@@ -25,6 +28,15 @@ void resume_foraging(Ant &a) {
 
 void reverse_heading(Ant &a) {
     a.last_dir = static_cast<int8_t>(opposite(static_cast<Dir>(a.last_dir)));
+}
+
+bool is_lost(const Ant &a, const ResolvedStats &st) {
+    if (st.lost_mult <= 0.0f)
+        return false;
+    const float limit =
+        st.lost_mult * (a.state == static_cast<uint8_t>(AntState::Searching) ? st.trail_len_home
+                                                                             : st.trail_len_food);
+    return static_cast<float>(a.trail_age) >= limit;
 }
 
 void deposit_trail(Engine &e, const Ant &a, const ResolvedStats &st, int cell) {
@@ -69,13 +81,66 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
     if (count == 0)
         return;
 
+    const bool fleeing = a.state == static_cast<uint8_t>(AntState::Fleeing);
+    const bool searching = a.state == static_cast<uint8_t>(AntState::Searching);
+    const bool returning = a.state == static_cast<uint8_t>(AntState::Returning);
+    const bool lost = (searching || returning) && is_lost(a, st);
+    const bool lost_searching = searching && lost && a.carried_volume <= 0.0f;
+    const Channel channel = (searching && !lost_searching) ? Channel::Food : Channel::Home;
+    const PheromoneParams &pp = e.config().pheromone;
+    const MovementParams &mv = e.config().movement;
+    const float *plane = g.plane(a.species, static_cast<int>(channel));
+    auto tau_at = [&](int dx, int dy) {
+        const int x = a.x + dx;
+        const int y = a.y + dy;
+        return g.in_bounds(x, y) ? plane[g.idx(x, y)] : 0.0f;
+    };
+    float tau_max = 0.0f;
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (pp.grad_beta > 0.0f) {
+        const float nw = tau_at(-1, -1), n = tau_at(0, -1), ne = tau_at(1, -1);
+        const float w = tau_at(-1, 0), c = tau_at(0, 0), e0 = tau_at(1, 0);
+        const float sw = tau_at(-1, 1), s = tau_at(0, 1), se = tau_at(1, 1);
+        tau_max = std::clamp(std::max({nw, n, ne, w, c, e0, sw, s, se}), 0.0f, 1.0f);
+        const float gx = (ne + 2.0f * e0 + se) - (nw + 2.0f * w + sw);
+        const float gy = (sw + 2.0f * s + se) - (nw + 2.0f * n + ne);
+        nx = gx * 0.25f;
+        ny = gy * 0.25f;
+    } else {
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+                tau_max = std::max(tau_max, tau_at(dx, dy));
+        tau_max = std::clamp(tau_max, 0.0f, 1.0f);
+    }
+
+    const float s_trail = std::min(1.0f, tau_max / mv.noise_tau_ref);
+    const float damp_eff = std::clamp(st.noise_damp * mv.noise_damp_scale, 0.0f, 1.0f);
+    const float p_rnd = st.random_move_prob * (1.0f - damp_eff * s_trail);
+    const float r = e.rng().next_float();
+
     int choice = 0;
-    if (e.rng().next_float() < st.random_move_prob) {
+    if (r < p_rnd) {
         choice = e.rng().next_int(count);
     } else {
-        const bool fleeing = a.state == static_cast<uint8_t>(AntState::Fleeing);
-        const Channel channel =
-            a.state == static_cast<uint8_t>(AntState::Searching) ? Channel::Food : Channel::Home;
+        std::array<float, 4> nav{1.0f, 1.0f, 1.0f, 1.0f};
+        const bool use_nav = fleeing || returning || lost_searching;
+        const float beta_eff = st.nav_beta * mv.nav_scale;
+        if (use_nav && beta_eff > 0.0f && e.colonies()[a.colony].alive) {
+            const ColonyRecord &home = e.colonies()[a.colony];
+            const float hx = static_cast<float>(home.x - a.x);
+            const float hy = static_cast<float>(home.y - a.y);
+            const float d2 = hx * hx + hy * hy;
+            if (d2 > 0.0f) {
+                const float inv = 1.0f / std::sqrt(d2);
+                const std::array<float, 4> align{-hy * inv, hx * inv, hy * inv, -hx * inv};
+                const float conf = (fleeing || returning || lost_searching) ? 1.0f : 0.0f;
+                const float k = beta_eff * conf * (1.0f - tau_max);
+                for (int dir = 0; dir < 4; ++dir)
+                    nav[dir] = std::clamp(1.0f + k * align[dir], mv.nav_min, mv.nav_max);
+            }
+        }
+
         const float danger_k = g.pher_at(a.species, static_cast<int>(Channel::Home), from) >= 0.9f
                                    ? st.danger_k_home
                                    : st.danger_k;
@@ -100,6 +165,12 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
             const float danger = fleeing ? 1.0f : std::clamp(1.0f - danger_k * alarm, 0.05f, 3.0f);
             // Divide out a common factor so even large alpha values retain a nonzero total.
             weights[k] = std::pow(weights[k] / largest_trail, st.alpha) * heading * danger;
+            if (pp.grad_beta > 0.0f) {
+                const float align_g = nx * DX[dir] + ny * DY[dir];
+                const float grad = std::clamp(1.0f + pp.grad_beta * align_g, kGradMin, kGradMax);
+                weights[k] *= grad;
+            }
+            weights[k] *= nav[dir];
             total += weights[k];
         }
         double roll = e.rng().next_float() * total;
@@ -230,6 +301,8 @@ void ant_update(Engine &e, int slot) {
             return;
     } else if (a.state == static_cast<uint8_t>(AntState::Returning) &&
                on_friendly_hill(e, a, cell)) {
+        e.metrics().deliveries[a.species] += 1;
+        e.metrics().return_steps_sum[a.species] += a.trail_age;
         e.colonies()[g.hill_at(cell)].stored_energy +=
             static_cast<double>(a.carried_volume) * a.carried_density;
         a.carried_volume = 0.0f;

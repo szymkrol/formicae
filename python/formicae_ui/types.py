@@ -61,5 +61,5 @@ COLONY_DTYPE = np.dtype(
 
 METRIC_KEYS_PER_SPECIES = (
     "population", "births", "kills", "deaths_combat", "deaths_hazard", "deaths_age",
-    "deaths_orphan", "colonies_alive",
+    "deaths_orphan", "colonies_alive", "deliveries", "return_steps_sum",
 )

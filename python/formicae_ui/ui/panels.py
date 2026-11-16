@@ -4,9 +4,12 @@ from __future__ import annotations
 # Runtime-tunable parameters and their ranges (spec section 9.3, set_param).
 TUNABLE_PARAMS = {
     "decay_scale": (0.0, 10.0, 1.0),
-    "diffusion": (0.0, 0.2, 0.0),
+    "diffusion": (0.0, 0.2, 0.05),
     "food_spawn_prob": (0.0, 1.0, 0.5),
     "food_spawn_interval": (1, 10000, 50),
+    "grad_beta": (0.0, 8.0, 2.0),
+    "nav_scale": (0.0, 4.0, 1.0),
+    "noise_damp_scale": (0.0, 2.0, 1.0),
 }
 
 
@@ -21,7 +24,9 @@ class InspectorPanel:
         self.info = sim.cell_info(x, y)
 
     def draw(self, surface) -> None:
-        raise NotImplementedError("TODO(P4): draw terrain, food, pheromones per species/channel, ant, colony")
+        raise NotImplementedError(
+            "TODO(P4): draw terrain, food, pheromones per species/channel, ant, colony"
+        )
 
 
 class ControlPanel:

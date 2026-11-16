@@ -23,8 +23,9 @@ class Analytics:
     The history is a preallocated float64 array that doubles its capacity when full, so a long run
     keeps every sample for the CSV without per-sample allocation.
 
-    CSV columns: tick, pop_s{i}, births_s{i}, kills_s{i}, deaths_combat_s{i}, deaths_hazard_s{i},
-    deaths_age_s{i}, deaths_orphan_s{i}, colonies_alive_s{i}, energy_c{j}, food_total_energy.
+    CSV columns: tick, per-species metric blocks from `METRIC_KEYS_PER_SPECIES` in order
+    (e.g. `pop_s{i}`, `births_s{i}`, ..., `deliveries_s{i}`, `return_steps_sum_s{i}`),
+    then `energy_c{j}`, then `food_total_energy`.
     """
 
     def __init__(self, n_species: int, n_colonies: int):

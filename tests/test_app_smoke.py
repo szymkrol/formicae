@@ -8,7 +8,6 @@ pygame = pytest.importorskip("pygame")
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import formicae_mock  # noqa: E402
-
 from formicae_ui.config import load_config  # noqa: E402
 from formicae_ui.mapgen import generate_map  # noqa: E402
 from formicae_ui.ui.app import App  # noqa: E402

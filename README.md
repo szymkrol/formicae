@@ -146,16 +146,15 @@ Goal: keep ant behavior natural, stable, and measurable; improve path choice wit
    - Confirm combat integration with P3: `find_target`/`resolve_attack` are called only when state rules allow; `defend_while_carrying` is respected; fleeing ants do not attack.
    - Confirm orphan behavior: ants of species with no live colonies take `orphan_loss * max_health` per tick as currently implemented and die with `DeathCause::Orphan` when health reaches zero.
 
-2. **Pheromone-gradient pathfinding enhancement (requested).**
-   - Current move choice samples among valid neighbors with `w = (ε + τ)^α * h * g`. Enhance it so ants are biased by the **local gradient** of the followed channel, not only by absolute neighbor values.
-   - Implement in `move_ant` (`engine/src/ai.cpp`) with clear, cheap math. A practical formula: for each candidate neighbor `n`, compute
-     - `tau_n = ε + pheromone_followed(species, channel, n)` (as now),
-     - `tau_here = ε + pheromone_followed(species, channel, current_cell)`,
-     - `grad = clamp(1 + beta_grad * (tau_n - tau_here) / max(tau_here, eps_grad), grad_min, grad_max)`,
-     - `w_n = (tau_n)^α * h * g * grad`.
-   - Keep `random_move_prob` unchanged as the exploration mechanism. Clamp the gradient factor so it cannot create negative/NaN weights or dominate so strongly that ants never explore.
-   - Add configuration for the enhancement so it can be tuned/disabled without code edits: either new runtime params exposed through `set_param` (coordinate with P4 bindings/config validation) or species/config fields if product scope allows. If adding params, document names/ranges/defaults and preserve current behavior at default values.
-   - Validate naturalness: ants should climb trails toward sources more reliably, still escape loops via randomness, and not form unrealistic single-file oscillations. Test on empty ground (near-random with forward bias), strong straight trail, forked trail, and trail disrupted by evaporation.
+2. **Pheromone-gradient pathfinding enhancement (shipped).**
+   - Movement samples among valid 4-neighbours using the followed channel. In addition to `τ_n`, heading `h`, and danger `g`, ants sense the 3×3 neighbourhood (8 surrounding cells) to bias uphill in that channel.
+   - Implemented in `move_ant` (`engine/src/ai.cpp`) with a Sobel gradient:
+     - `gx = (τ_NE + 2τ_E + τ_SE) − (τ_NW + 2τ_W + τ_SW)`, `gy = (τ_SW + 2τ_S + τ_SE) − (τ_NW + 2τ_N + τ_NE)` (x right, y down; out-of-bounds = 0)
+     - `nx = gx/4`, `ny = gy/4`, `align(dir) = nx·DX[dir] + ny·DY[dir]`
+     - `grad = clamp(1 + grad_beta · align(dir), 0.5, 2.0)`
+     - `w_n = (ε + τ_n)^α · h · g · grad`
+   - `random_move_prob` remains unchanged. The clamp bounds are fixed in `ai.cpp` for numerical safety. `grad_beta` is runtime-tunable (`set_param`, range 0–8, default **2.0**; 0 disables the bias). Default config enables the gradient (`configs/default.json`: `pheromone.grad_beta = 2.0`).
+   - Note: this replaces the earlier relative-difference proposal (`(τ_n − τ_here)/max(τ_here, eps_grad)`) because it did not add directional information beyond `τ_n`; Sobel uses the full 3×3 neighbourhood. On saturated uniform trails the gradient is ~0 and behaviour falls back to the base weights. Clamp saturation means very high `grad_beta` can be non-monotonic.
 
 3. **Species tuning and trail-quality measurement.**
    - Tune `configs/default.json` species values for distinct, understandable roles (Swarmer/Tank/Nomad) and for visible interaction (foraging, occasional fights, survivable but not stagnant populations). Use scenario configs for aggressive/siege cases rather than making defaults chaotic.

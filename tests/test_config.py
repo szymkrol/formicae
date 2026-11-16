@@ -124,3 +124,41 @@ def test_load_config_raises_config_error_for_invalid_values(tmp_path):
 @pytest.mark.parametrize("value", [None, [], "config"])
 def test_non_object_config_is_reported(value):
     assert validate_config(value) == ["configuration must be a JSON object"]
+
+
+def test_movement_section_optional_and_validated():
+    cfg = valid_config()
+    cfg.pop("movement", None)
+    for sp in cfg["species"]:
+        sp.pop("nav_beta", None)
+        sp.pop("noise_damp", None)
+        sp.pop("lost_mult", None)
+    assert validate_config(cfg) == []
+
+    cfg = valid_config()
+    cfg["movement"]["nope"] = 1
+    assert any("unknown key 'movement.nope'" in p for p in validate_config(cfg))
+
+    cfg = valid_config()
+    cfg["movement"]["nav_memory"] = 1
+    assert any("unknown key 'movement.nav_memory'" in p for p in validate_config(cfg))
+
+    cfg = valid_config()
+    cfg["movement"]["noise_tau_ref"] = 0
+    assert any("movement.noise_tau_ref" in p for p in validate_config(cfg))
+
+    cfg = valid_config()
+    cfg["species"][0]["nav_beta"] = -1
+    assert any("species[0].nav_beta" in p for p in validate_config(cfg))
+
+    cfg = valid_config()
+    cfg["species"][0]["noise_damp"] = 1.1
+    assert any("species[0].noise_damp" in p for p in validate_config(cfg))
+
+    cfg = valid_config()
+    cfg["species"][0]["lost_mult"] = -0.1
+    assert any("species[0].lost_mult" in p for p in validate_config(cfg))
+
+    cfg = valid_config()
+    cfg["species"][0]["lost_mult"] = 0
+    assert validate_config(cfg) == []

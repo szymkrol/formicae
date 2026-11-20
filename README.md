@@ -26,6 +26,7 @@ uv run formicae-ui --map-seed 7 --sim-seed 3 --config configs/default.json
 # 4. check
 uv run pytest                 # API tests: mock engine and the real C++ module
 make cpp-test                 # plain CMake build and all C++ regression checks
+make bench                    # performance harness (spec section 3 targets)
 uv run ruff check .           # lint
 ```
 
@@ -33,8 +34,17 @@ uv run ruff check .           # lint
 `make format`, `make clean`. After you edit any C++ file, `uv run ...` or `uv sync` rebuilds the
 module automatically. Headless check (no window): `SDL_VIDEODRIVER=dummy uv run formicae-ui --mock --frames 60`.
 
-UI keys: `Space` pause, `N` single step, `+`/`-` speed, `P` pheromone overlay, mouse wheel zoom,
-middle or right button drag to pan, `E` export `metrics.csv`.
+UI keys (`H` shows them in the app): `Space` pause, `N` single step, `+`/`-` speed, `P` pheromone
+overlay, `1`/`2`/`3` channel, `[`/`]` species, `T` heatmap overlay (traffic / combat / off), `A` ant
+colors by species and caste or by state, `F` spawn-food mode, `R` reset, `Tab` analytics, `C`
+parameter sliders, `S` save a snapshot (`snap_<date>_<time>_t<tick>.ants` in the working
+directory), `E` export `metrics.csv`. Mouse: wheel zoom, middle or right button drag to pan, left
+click inspects a cell (or spawns food in `F` mode). Snapshots are restored with
+`Simulation.load(path)`. The sidebar shows every colony's health, stored energy and population.
+
+Performance: `make bench` builds `formicae_bench` (Release) and runs the spec section 3 reference
+presets; `make bench BENCH_ARGS="--width 256 --height 256 --ants 5000 --ticks 2000"` runs a custom
+case. Numbers are informational, not a CI gate.
 
 **Troubleshooting.** `uv: command not found` after installing: open a new terminal. Build errors
 about the compiler: install `build-essential` (or `clang`). To use Python 3.15 later, change
@@ -93,10 +103,18 @@ The project builds and the existing test suite passes. The core simulation is la
 - **M1 (P1):** grid layers, RNG, config structs, ant slot storage/free list + periodic compaction, tick pipeline (§3), pheromone diffusion (double-buffered, optional), per-channel decay with precomputed factors, hill beacon, runtime food/terrain/param controls, and metrics accumulation.
 - **M2 AI (P2):** `ant_update` implements the priority/state logic of §5.3 and movement/deposits of §5.4 (candidate filtering, weighted move choice, move cost, pickup/delivery, trail fading, hazard/flee/fight transitions) and is covered by `ai_checks`.
 - **M2 combat/colonies/food (P3):** `colony_update`, `on_colony_destroyed`, `find_target`, `resolve_attack`, `on_ant_death`, and dynamic `spawn_food_step` (§7.4) are implemented.
-- **M0 (P4):** build/packaging, mock engine, config loader skeleton, and the pybind11 `Simulation` API with zero-copy read-only views. `save`/`load` and full validation/UI panels are still pending.
+- **M0 (P4):** build/packaging, mock engine, config loader, and the pybind11 `Simulation` API with zero-copy read-only views. Binary `save`/`load` (`ANTS` + format version; a loaded run continues bit-identically), full config validation on the C++ side (unknown keys, types and ranges, all reported with their path), and the UI inspector/parameter panels are implemented.
 - **M3/M4 (P5, P6):** `generate_map` (§8.2) and `Analytics` (history, CSV, render) are implemented; the PyGame UI runs with camera, zoom/pan, renderer/HUD, time control, overlays, and hotkeys.
 
-Search for `TODO(P4)` to find the remaining explicit implementation markers (currently limited to M0/UI integration work).
+Verification and stretch features:
+
+- **Determinism and invariants:** `Simulation.state_hash()` fingerprints the full state (same bytes as a snapshot). `engine/tests/invariant_checks.cpp` checks occupancy, pheromone range, metric accounting, food/energy bounds, same-seed hashes, reset/load hashes and a 20 000-tick memory-stability run on every `make cpp-test`.
+- **Heatmaps:** with `enable_heatmaps` (on in `configs/default.json`) the engine counts cell entries (`traffic()`) and hits (`combat_map()`); `T` shows them log-scaled.
+- **Castes:** `configs/default.json` defines STANDARD, EXPLORER, GATHERER and FIGHTER for each species with `caste_ratio` `[1, 0, 0, 0]`, which is bit-identical to a run without castes; `configs/scenario_castes.json` spawns all four. `metrics()["population_caste"]` is `[S, 4]`. `caste_ratio` (per species, up to 4 weights) is a config key added for this; spec 7.1 keeps the ratio per colony, and every colony takes its species' ratio.
+- **Friendly swap:** `movement.friendly_swap` (default `false`) lets an ant with no free cell swap with a same-species ant heading straight at it.
+- **Measured performance** (`make bench`, this branch, one WSL2 machine): 10k ants / 512² about 150 ticks/s (target 300); 100k ants / 1024² about 19 ticks/s (target 30). Optimisation is P1's week-8 task.
+
+No `TODO` markers remain in the tree.
 
 ## Concrete plans per person
 
@@ -112,6 +130,8 @@ The plans below are the remaining work as of this repository state. They are wri
 ### P1 — Szymon (M1 Core engine)
 
 Goal: make the engine observable, deterministic to verify, and safe for long runs.
+
+Done: `state_hash()` with regression tests, `formicae_bench` profiling harness, metrics/invariant checks, the 20k-tick stability check (`invariant_checks`), and heatmap counters. Remaining: optimisation to reach the spec section 3 targets (see measured numbers above).
 
 1. **Determinism hash (high priority).**
    - Add a public, read-only state fingerprint API (e.g. `uint64_t Engine::state_hash() const` and `Simulation.state_hash()` binding; keep names consistent with existing style).
@@ -140,6 +160,8 @@ Goal: make the engine observable, deterministic to verify, and safe for long run
 ### P2 — (M2 AI, movement and state machine)
 
 Goal: keep ant behavior natural, stable, and measurable; improve path choice with a pheromone gradient while preserving spec-compatible behavior.
+
+Done: castes (item 4, default ratio verified bit-identical) and the optional friendly swap rule (`movement.friendly_swap`). Tuning EXPLORER/GATHERER/FIGHTER values is still open.
 
 1. **Behavior correctness and naturalness pass.**
    - Exercise `ant_update`/`move_ant` against §5.3–§5.4 in integrated runs and targeted tests. Check: no moves into impassable/occupied/enemy-hill cells, `last_dir`/reverse handling avoids jitter, dead-end backtracking works, FLEEING deposits DANGER and follows HOME, THORNS damage/death is applied, pickup chooses best adjacent/own food source, delivery only on friendly hill footprint, carried food/energy is conserved.
@@ -187,21 +209,9 @@ Goal: make fights, economy, and colony lifecycle readable and balanced.
 
 Goal: close the remaining integration gaps and make the simulation inspectable/debuggable.
 
-1. **Config validation (finish).**
-   - `python/formicae_ui/config.py` already rejects unknown keys/ranges; complete equivalent validation in C++ config parsing/binding path as needed so bad configs fail consistently (`engine/src/config.cpp`, `engine/bindings/module.cpp` `config_from_dict`).
-   - Every `ConfigError`/`ValueError` should name the bad key/path and expected range/shape.
-   - Add Python and/or C++ tests for unknown keys, missing required sections, out-of-range values, hostility matrix shape, and pheromone decay length.
+Done: C++ config validation (`config_from_dict` + `Config::validate`, tests in `tests/test_config.py`), binary save/load (`engine/src/io.cpp`, round-trip tests in `engine/tests/io_checks.cpp` and `tests/test_mock_api.py`), and the inspector/parameter panels with the `S` snapshot key (`tests/test_panels.py`).
 
-2. **Save/load (priority P2).**
-   - Implement binary save/load in `engine/src/io.cpp` and wire `Simulation.save()`/`load()` in `engine/bindings/module.cpp`. The format must include a clear header/version (spec mentions `ANTS` + format version) and restore all state required to continue identically: config/map-derived state as needed, tick, RNG state, ants (including dead-slot layout rules you choose, but deterministically), colonies, grid layers, metrics/counters, and runtime params.
-   - Invalidate snapshot views on load as on step/reset. Add round-trip tests: save at tick T, load, step N → same hash/metrics as uninterrupted run to T+N.
-
-3. **Inspector and control panels.**
-   - Implement `InspectorPanel` in `python/formicae_ui/ui/panels.py`: render `sim.cell_info(x,y)` clearly (terrain, food volume/density, pheromones per species/channel as selected/available, ant summary, colony summary). Handle `None` fields.
-   - Implement `ControlPanel`: sliders/controls for `TUNABLE_PARAMS` (`decay_scale`, `diffusion`, `food_spawn_prob`, `food_spawn_interval`) calling `sim.set_param`; show current values and clamp to ranges. If P2 adds gradient params and P4 exposes them, include them with explicit labels/defaults.
-   - Wire selection and panel rendering in `python/formicae_ui/ui/app.py` (replace `TODO(P4)` hooks). `S` save snapshot: use a safe default path or prompt pattern consistent with the app; do not overwrite silently in surprising locations.
-
-4. **Tests and CI hardening.**
+1. **Tests and CI hardening.**
    - Extend `test_config.py`, `test_mock_api.py`, and real-module tests to cover new behavior (save/load, state hash binding if added by P1, inspector-safe data access where practical). Add invariant checks where cheap: occupancy points to live ants or `NO_ANT`, pheromone values remain clamped by engine rules, no dead ants rendered as alive.
 
 ### P5 — (M3 Map generator, M4 analytics)
@@ -222,6 +232,8 @@ Goal: make generated worlds fair/playable and metrics easy to interpret.
 ### P6 — (M4 UI)
 
 Goal: make the simulation smooth, legible, and demo-ready.
+
+Done: ant colors by state (`A`) with legend, caste shades, colony health/energy in the sidebar, heatmap overlays (`T`), key help popup (`H`).
 
 1. **Performance and rendering correctness.**
    - Test real-engine runs at target sizes (especially ~10k ants). Keep rendering viewport-culled; avoid per-cell Python work over the whole map each frame. Profile frame time separately from simulation `step()` budget.

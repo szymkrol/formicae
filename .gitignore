@@ -1,4 +1,6 @@
 build/
+build-bench/
+*.ants
 dist/
 *.egg-info/
 __pycache__/

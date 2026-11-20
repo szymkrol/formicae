@@ -93,6 +93,7 @@ void resolve_attack(Engine& e, int attacker_slot, const Target& target) {
 
   if (rng.next_float() >= st.accuracy) return;  // miss
   const float damage = std::max(MIN_DAMAGE, st.damage * (0.75f + 0.5f * rng.next_float()) - armor);
+  e.count_hit(cell);
 
   // Hit event: alarm on the DANGER layer of both species involved.
   const float alarm = e.config().pheromone.hit_alarm;

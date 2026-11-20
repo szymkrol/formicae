@@ -7,6 +7,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync                 # Python from .python-version (3.13; bump to 3.15 per spec D8)
-      - run: uv run pytest -q
-      - run: make cpp-test
-      - run: SDL_VIDEODRIVER=dummy uv run formicae-ui --mock --frames 60
+      - run: uv run ruff check .
+      - run: uv run pytest -q        # API contract (mock + real module), determinism, UI panels
+      - run: make cpp-test           # includes invariant_checks: invariants, hashes, 20k-tick run
+      - name: UI smoke (mock and real engine)
+        run: |
+          SDL_VIDEODRIVER=dummy uv run formicae-ui --mock --frames 60
+          SDL_VIDEODRIVER=dummy uv run formicae-ui --frames 60
+      - name: Benchmark harness builds and runs (numbers are informational)
+        run: make bench BENCH_ARGS="--width 128 --height 128 --ants 2000 --ticks 200"

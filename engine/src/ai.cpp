@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "formicae/combat.hpp"
 #include "formicae/engine.hpp"
@@ -55,6 +56,52 @@ void deposit_trail(Engine &e, const Ant &a, const ResolvedStats &st, int cell) {
     e.deposit(a.species, searching ? Channel::Home : Channel::Food, cell, amount);
 }
 
+// Bookkeeping after an ant entered `cell`: trail age, home reset, trail deposit, traffic counter.
+void finish_step(Engine &e, Ant &a, const ResolvedStats &st, int cell) {
+    // Saturation prevents old trails from becoming fresh again after uint16_t wraps.
+    if (a.trail_age < std::numeric_limits<uint16_t>::max())
+        ++a.trail_age;
+    if (a.state == static_cast<uint8_t>(AntState::Searching) && on_friendly_hill(e, a, cell))
+        a.trail_age = 0;
+    deposit_trail(e, a, st, cell);
+    e.count_traffic(cell);
+}
+
+// Jam avoidance (stretch, MovementParams::friendly_swap). Called only when the ant has no free
+// neighbour: if the cell straight ahead holds a moving same-species ant heading straight back,
+// the two pass each other by swapping cells. Both pay their move cost; no random numbers are used.
+void try_friendly_swap(Engine &e, int slot, const ResolvedStats &st) {
+    Ant &a = e.ants()[slot];
+    if (a.last_dir < 0)
+        return;
+    Grid &g = e.grid();
+    const int from = g.idx(a.x, a.y);
+    const Dir ahead = static_cast<Dir>(a.last_dir);
+    const int to = g.neighbors4(from).cell[a.last_dir];
+    if (to < 0 || g.occupant(to) == NO_ANT)
+        return;
+    const int other = g.occupant(to);
+    Ant &b = e.ants()[other];
+    if (!is_alive(b) || b.species != a.species ||
+        b.state == static_cast<uint8_t>(AntState::Fighting) ||
+        b.last_dir != static_cast<int8_t>(opposite(ahead)))
+        return;
+    const ResolvedStats &sb = e.stats_of(b);
+    const float cost_a = g.cost_at(to);
+    const float cost_b = g.cost_at(from);
+    if (a.move_acc < cost_a || b.move_acc < cost_b)
+        return;
+
+    a.move_acc -= cost_a;
+    b.move_acc -= cost_b;
+    g.occupancy[from] = other;
+    g.occupancy[to] = slot;
+    std::swap(a.x, b.x);
+    std::swap(a.y, b.y);
+    finish_step(e, a, st, to);
+    finish_step(e, b, sb, from);
+}
+
 void move_ant(Engine &e, int slot, const ResolvedStats &st) {
     Ant &a = e.ants()[slot];
     Grid &g = e.grid();
@@ -78,8 +125,11 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
     }
     if (count == 0 && fallback >= 0)
         directions[count++] = fallback;
-    if (count == 0)
+    if (count == 0) {
+        if (e.config().movement.friendly_swap)
+            try_friendly_swap(e, slot, st);
         return;
+    }
 
     const bool fleeing = a.state == static_cast<uint8_t>(AntState::Fleeing);
     const bool searching = a.state == static_cast<uint8_t>(AntState::Searching);
@@ -196,12 +246,7 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
     a.x = static_cast<int16_t>(g.x_of(to));
     a.y = static_cast<int16_t>(g.y_of(to));
     a.last_dir = static_cast<int8_t>(dir);
-    // Saturation prevents old trails from becoming fresh again after uint16_t wraps.
-    if (a.trail_age < std::numeric_limits<uint16_t>::max())
-        ++a.trail_age;
-    if (a.state == static_cast<uint8_t>(AntState::Searching) && on_friendly_hill(e, a, to))
-        a.trail_age = 0;
-    deposit_trail(e, a, st, to);
+    finish_step(e, a, st, to);
 }
 
 bool pick_up_food(Engine &e, Ant &a, const ResolvedStats &st, int cell) {

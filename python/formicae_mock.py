@@ -243,7 +243,7 @@ class Simulation:
                     self._ants["carried_density"][ant_i] = 0
                     self._ants["state"][ant_i] = AntState.SEARCHING
                     self._ants["trail_age"][ant_i] = 0
-                    if not self._has_food_memory(self._ants[ant_i]) or self._rng.random() >= float(cfg.get("p_fid", 0.7)):
+                    if not self._has_food_memory(self._ants[ant_i]) or self._rng.random() >= float(cfg.get("p_fid", 0.95)):
                         self._ants["food_x"][ant_i] = -1
                         self._ants["food_y"][ant_i] = -1
                     searching = True

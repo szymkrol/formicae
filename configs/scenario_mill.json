@@ -127,7 +127,7 @@
       "nav_beta": 1.5,
       "noise_damp": 0.8,
       "lost_mult": 1.0,
-      "p_fid": 0.7,
+      "p_fid": 0.95,
       "goal_beta": 2.0,
       "goal_random_move_frac": 0.3333333333333333,
       "explore_ticks": 40,

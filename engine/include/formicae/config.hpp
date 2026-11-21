@@ -36,7 +36,7 @@ struct SpeciesStats {
     float nav_beta = 1.5f;
     float noise_damp = 0.8f;
     // memory / mill mitigation
-    float p_fid = 0.7f;
+    float p_fid = 0.95f;
     float goal_beta = 2.0f;
     float goal_random_move_frac = 1.0f / 3.0f;
     int explore_ticks = 40;

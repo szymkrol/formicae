@@ -26,7 +26,7 @@
     "hazard_alarm": 0.3,
     "home_beacon": 1.0,
     "food_density_ref": 50,
-    "epsilon": 0.05,
+    "epsilon": 0.2,
     "grad_beta": 2.0,
     "tau_cap": 1.0
   },
@@ -109,7 +109,7 @@
       "flee_ticks": 15,
       "speed": 1.0,
       "random_move_prob": 0.1,
-      "alpha": 2.0,
+      "alpha": 1.3,
       "forward_bonus": 1.5,
       "damage": 2,
       "armor": 0,
@@ -134,7 +134,7 @@
       "food_erase_factor": 0.3,
       "food_erase_tau": 0.1,
       "food_erase_delta": 0.02,
-      "deposit_home_while_searching": true
+      "deposit_home_while_searching": false
     }
   ],
   "render": {

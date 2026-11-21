@@ -41,6 +41,7 @@ SECTION_KEYS = {
         "food_density_ref",
         "epsilon",
         "grad_beta",
+        "tau_cap",
     },
     "movement": {"nav_min", "nav_max", "noise_tau_ref", "friendly_swap"},
     "food": {
@@ -94,6 +95,14 @@ SPECIES_KEYS = {
     "danger_k_home",
     "orphan_loss",
     "lost_mult",
+    "p_fid",
+    "goal_beta",
+    "goal_random_move_frac",
+    "explore_ticks",
+    "food_erase_factor",
+    "food_erase_tau",
+    "food_erase_delta",
+    "deposit_home_while_searching",
     "caste_ratio",
 }
 CASTE_KEYS = {
@@ -121,8 +130,15 @@ SPECIES_RANGES = {
     "random_move_prob": (0, 1, False),
     "alpha": (0, None, False),
     "forward_bonus": (0, None, False),
-    "nav_beta": (0, None, False),
+    "nav_beta": (0, 8, False),
     "noise_damp": (0, 1, False),
+    "p_fid": (0, 1, False),
+    "goal_beta": (0, None, False),
+    "goal_random_move_frac": (0, 1, False),
+    "explore_ticks": (0, 255, True),
+    "food_erase_factor": (0, 1, False),
+    "food_erase_tau": (0, 1, False),
+    "food_erase_delta": (0, 1, False),
     "damage": (0, None, False),
     "armor": (0, None, False),
     "accuracy": (0, 1, False),
@@ -217,6 +233,7 @@ def validate_config(cfg: Any) -> list[str]:
             ("food_density_ref", 0, None),
             ("epsilon", 0, None),
             ("grad_beta", 0, 8),
+            ("tau_cap", 0, 1),
         ):
             _check_number_range(
                 pheromone,
@@ -225,7 +242,7 @@ def validate_config(cfg: Any) -> list[str]:
                 problems,
                 low,
                 high,
-                low_inclusive=key not in {"food_density_ref", "epsilon"},
+                low_inclusive=key not in {"food_density_ref", "epsilon", "tau_cap"},
             )
 
     food = cfg.get("food")
@@ -406,6 +423,12 @@ def validate_config(cfg: Any) -> list[str]:
                     high_inclusive=True,
                 )
         _check_bool(item, "defend_while_carrying", f"{path}.defend_while_carrying", problems)
+        _check_bool(
+            item,
+            "deposit_home_while_searching",
+            f"{path}.deposit_home_while_searching",
+            problems,
+        )
         castes = item.get("castes", [])
         if not isinstance(castes, list):
             problems.append(f"{path}.castes must be an array")

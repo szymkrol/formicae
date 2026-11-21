@@ -13,6 +13,18 @@ from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE
 CONFIG = load_config(Path(__file__).parent.parent / "configs" / "default.json")
 
 
+def test_api_version():
+    assert formicae_mock.API_VERSION == 2
+
+
+def test_ant_dtype_has_memory_fields():
+    names = ANT_DTYPE.names
+    assert "explore_timer" in names
+    assert "fidelity_fail" in names
+    assert "food_x" in names
+    assert "food_y" in names
+
+
 def _implementations():
     impls = [formicae_mock]
     try:

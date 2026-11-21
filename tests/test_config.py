@@ -126,6 +126,45 @@ def test_non_object_config_is_reported(value):
     assert validate_config(value) == ["configuration must be a JSON object"]
 
 
+def test_new_pheromone_and_species_memory_keys_validated():
+    cfg = valid_config()
+    cfg["pheromone"]["tau_cap"] = 0.6
+    cfg["species"][0].update(
+        {
+            "p_fid": 0.5,
+            "goal_beta": 3.0,
+            "goal_random_move_frac": 0.25,
+            "explore_ticks": 10,
+            "food_erase_factor": 0.2,
+            "food_erase_tau": 0.05,
+            "food_erase_delta": 0.01,
+            "deposit_home_while_searching": False,
+        }
+    )
+    assert validate_config(cfg) == []
+
+    bad = valid_config()
+    bad["pheromone"]["tau_cap"] = 0
+    bad["species"][0]["p_fid"] = 1.5
+    bad["species"][0]["goal_beta"] = -1
+    bad["species"][0]["goal_random_move_frac"] = 2
+    bad["species"][0]["explore_ticks"] = 256
+    bad["species"][0]["food_erase_factor"] = -0.1
+    bad["species"][0]["food_erase_tau"] = 2
+    bad["species"][0]["food_erase_delta"] = -0.01
+    bad["species"][0]["deposit_home_while_searching"] = 1
+    problems = validate_config(bad)
+    assert any("pheromone.tau_cap" in p for p in problems)
+    assert any("species[0].p_fid" in p for p in problems)
+    assert any("species[0].goal_beta" in p for p in problems)
+    assert any("species[0].goal_random_move_frac" in p for p in problems)
+    assert any("species[0].explore_ticks" in p for p in problems)
+    assert any("species[0].food_erase_factor" in p for p in problems)
+    assert any("species[0].food_erase_tau" in p for p in problems)
+    assert any("species[0].food_erase_delta" in p for p in problems)
+    assert any("species[0].deposit_home_while_searching" in p for p in problems)
+
+
 def test_movement_section_optional_and_validated():
     cfg = valid_config()
     cfg.pop("movement", None)

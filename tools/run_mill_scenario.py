@@ -8,8 +8,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 from formicae_ui.analytics.mill_diagnostics import (
     MillDiagnostics,
@@ -17,6 +19,41 @@ from formicae_ui.analytics.mill_diagnostics import (
     make_mill_scenario_map,
 )
 from formicae_ui.config import load_config
+
+SWEEP_CONFIG_KEYS = (
+    "seeds.sim_seed",
+    "pheromone.decay_scale",
+    "species.0.a_food",
+    "species.0.a_home",
+    "species.0.trail_len_food",
+    "species.0.trail_len_home",
+    "species.0.deposit_home_while_searching",
+    "pheromone.tau_cap",
+    "species.0.explore_timer_max",
+    "species.0.memory_radius",
+    "species.0.goal_max_distance",
+)
+
+
+def _nav_get(d: dict, dotted: str):
+    cur: Any = d
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def config_hash(cfg: dict) -> str:
+    h = hashlib.sha256()
+    for key in SWEEP_CONFIG_KEYS:
+        h.update(key.encode())
+        h.update(repr(_nav_get(cfg, key)).encode())
+    return h.hexdigest()[:16]
+
+
+def engine_kind(prefer_mock: bool) -> str:
+    return "mock" if prefer_mock else "c++"
 
 
 def load_sim(cfg: dict, map_data: dict, prefer_mock: bool = False):
@@ -70,13 +107,21 @@ def main(argv: list[str] | None = None) -> int:
 
     diag.export_csv(out / "mill_diagnostics.csv")
     diag.export_nest_food_profile(sim, out)
+    mill_vals = [s.mill_index for s in diag.samples if s.mill_index is not None]
+    mean_mill = sum(mill_vals) / len(mill_vals) if mill_vals else None
+    stuck_searching = sum(s.stuck_searching for s in diag.samples)
+    stuck_returning = sum(s.stuck_returning for s in diag.samples)
+    stuck_carrying_food = sum(s.stuck_carrying_food for s in diag.samples)
     summary = {
+        "engine": engine_kind(args.mock),
+        "config_hash": config_hash(cfg),
         "ticks": int(sim.tick) if not callable(getattr(sim, "tick", None)) else int(sim.tick()),
         "map_stats": map_data.get("stats", {}),
         "metrics": {
             k: (v.tolist() if hasattr(v, "tolist") else v)
             for k, v in sim.metrics().items()
         },
+        "mean_mill_index": mean_mill,
         "last_mill_index": next(
             (s.mill_index for s in reversed(diag.samples) if s.mill_index is not None),
             None,
@@ -87,6 +132,9 @@ def main(argv: list[str] | None = None) -> int:
                 diag.samples[-1].saturation.items() if diag.samples else []
             )
         },
+        "stuck_searching": stuck_searching,
+        "stuck_returning": stuck_returning,
+        "stuck_carrying_food": stuck_carrying_food,
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({"out": str(out), "last_mill_index": summary["last_mill_index"]}, indent=2))

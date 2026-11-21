@@ -94,7 +94,8 @@ class Engine {
     // Adds food to a cell, merging density volume-weighted.
     void add_food(int cell, float volume, float density);
     void deposit(int species, Channel ch, int cell, float amount) {
-        grid_.deposit(species, static_cast<int>(ch), cell, amount);
+        const float cap = ch == Channel::Danger ? P_MAX : cfg_.pheromone.tau_cap;
+        grid_.deposit(species, static_cast<int>(ch), cell, amount, cap);
     }
     // Heatmap counters (stretch): no-ops unless enable_heatmaps is set; saturate instead of wrap.
     void count_traffic(int cell) { bump(grid_.traffic, cell); }

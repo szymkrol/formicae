@@ -17,7 +17,7 @@ using namespace formicae;
 
 namespace {
 
-constexpr int API_VERSION = 1;
+constexpr int API_VERSION = 2;
 constexpr int MAX_STEP = 10000;
 
 // ---- dict -> C++ conversion ------------------------------------------------------------------
@@ -114,6 +114,16 @@ SpeciesStats stats_from_dict(const Section &s) {
     OPT(danger_k);
     OPT(danger_k_home);
     OPT(orphan_loss);
+    OPT(nav_beta);
+    OPT(noise_damp);
+    OPT(p_fid);
+    OPT(goal_beta);
+    OPT(goal_random_move_frac);
+    OPT(explore_ticks);
+    OPT(food_erase_factor);
+    OPT(food_erase_tau);
+    OPT(food_erase_delta);
+    OPT(deposit_home_while_searching);
     OPT(lost_mult);
 #undef OPT
     return st;
@@ -187,7 +197,10 @@ Config config_from_dict(const py::dict &d) {
                          "defend_while_carrying", "cost",    "carry_capacity",
                          "a_home",         "a_food",         "trail_len_home",
                          "trail_len_food", "danger_k",       "danger_k_home",
-                         "orphan_loss",    "lost_mult",      "caste_ratio"});
+                         "orphan_loss",    "lost_mult",      "p_fid",
+                         "goal_beta",      "goal_random_move_frac", "explore_ticks",
+                         "food_erase_factor", "food_erase_tau", "food_erase_delta",
+                         "deposit_home_while_searching", "caste_ratio"});
         SpeciesDef def;
         s.get("name", def.name);
         def.stats = stats_from_dict(s);
@@ -227,7 +240,7 @@ Config config_from_dict(const py::dict &d) {
         const Section p(reader, root.at("pheromone"), "pheromone",
                         {"decay", "decay_scale", "diffusion", "cutoff", "hit_alarm", "death_alarm",
                          "hazard_alarm", "home_beacon", "food_density_ref", "epsilon",
-                         "grad_beta"});
+                         "grad_beta", "tau_cap"});
         PheromoneParams &pp = cfg.pheromone;
         std::vector<float> decay(pp.decay.begin(), pp.decay.end());
         p.get("decay", decay);
@@ -246,6 +259,7 @@ Config config_from_dict(const py::dict &d) {
         OPT(food_density_ref);
         OPT(epsilon);
         OPT(grad_beta);
+        OPT(tau_cap);
 #undef OPT
     }
 
@@ -553,7 +567,8 @@ PYBIND11_MODULE(formicae, m) {
 
     // NumPy dtypes of the exposed records; the layouts must match python/formicae_ui/types.py.
     PYBIND11_NUMPY_DTYPE(Ant, id, age, x, y, colony, trail_age, species, caste, state, last_dir,
-                         timer, pad, health, carried_volume, carried_density, move_acc);
+                         timer, explore_timer, fidelity_fail, pad, health, carried_volume,
+                         carried_density, move_acc, food_x, food_y);
     PYBIND11_NUMPY_DTYPE(ColonyRecord, stored_energy, health, max_health, population, x, y, species,
                          alive, pad);
 

@@ -24,7 +24,7 @@ namespace formicae {
 namespace {
 
 constexpr char MAGIC[4] = {'A', 'N', 'T', 'S'};
-constexpr uint32_t FORMAT_VERSION = 1;
+constexpr uint32_t FORMAT_VERSION = 2;
 
 class Writer {
   public:
@@ -187,6 +187,14 @@ template <class Ar, class T> void fields_stats(Ar &ar, T &s) {
     ar(s.forward_bonus);
     ar(s.nav_beta);
     ar(s.noise_damp);
+    ar(s.p_fid);
+    ar(s.goal_beta);
+    ar(s.goal_random_move_frac);
+    ar(s.explore_ticks);
+    ar(s.food_erase_factor);
+    ar(s.food_erase_tau);
+    ar(s.food_erase_delta);
+    ar(s.deposit_home_while_searching);
     ar(s.damage);
     ar(s.armor);
     ar(s.accuracy);
@@ -246,6 +254,7 @@ template <class Ar, class T> void fields_config(Ar &ar, T &cfg) {
     ar(p.food_density_ref);
     ar(p.epsilon);
     ar(p.grad_beta);
+    ar(p.tau_cap);
 
     auto &m = cfg.movement;
     ar(m.nav_min);
@@ -369,7 +378,9 @@ Engine Engine::load(const std::string &path) {
     uint32_t version = 0;
     r(version);
     if (version != FORMAT_VERSION)
-        r.fail("unsupported format version " + std::to_string(version));
+        r.fail("unsupported format version " + std::to_string(version) + " (expected " +
+               std::to_string(FORMAT_VERSION) +
+               "); Ant layout changed to 44 bytes; old saves unsupported");
 
     Config cfg;
     fields_config(r, cfg);

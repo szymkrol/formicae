@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import csv
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,10 @@ class MillSample:
     population: list[int]
     deliveries_per_ant_1000: list[float]
     return_steps_sum: list[int]
+    return_steps_per_delivery: list[float] = field(default_factory=list)
+    stuck_searching: int = 0
+    stuck_returning: int = 0
+    stuck_carrying_food: int = 0
 
 
 def saturation_index(pheromones: np.ndarray) -> dict[tuple[int, int], float]:
@@ -134,6 +138,9 @@ class MillDiagnostics:
         sat = saturation_index(pher) if pher is not None else {}
         mill_index = None
         matched = 0
+        stuck_searching = 0
+        stuck_returning = 0
+        stuck_carrying_food = 0
         if tick % self.mill_every == 0:
             pos = self._snapshot_positions(ants, colonies)
             self._pos_history[tick] = pos
@@ -149,6 +156,14 @@ class MillDiagnostics:
                         dy = pos[aid][1] - old[aid][1]
                         if dx * dx + dy * dy < thr2:
                             stuck += 1
+                            idx = int(np.where(ants["id"] == aid)[0][0])
+                            state = int(ants["state"][idx])
+                            if state == AntState.SEARCHING:
+                                stuck_searching += 1
+                            elif state == AntState.RETURNING:
+                                stuck_returning += 1
+                            if float(ants["carried_volume"][idx]) > 0:
+                                stuck_carrying_food += 1
                     mill_index = stuck / matched
                 else:
                     mill_index = 0.0
@@ -164,11 +179,24 @@ class MillDiagnostics:
             int(x) for x in np.asarray(metrics["return_steps_sum"], dtype=np.int64)
         ]
         dpa = []
-        for d, p in zip(deliveries, pops, strict=False):
+        rspd = []
+        for d, p, rs in zip(deliveries, pops, ret_steps, strict=False):
             denom = max(p, 1)
             dpa.append((d / denom) * 1000.0)
+            rspd.append((rs / d) if d > 0 else float("nan"))
         sample = MillSample(
-            tick, mill_index, matched, sat, deliveries, pops, dpa, ret_steps
+            tick,
+            mill_index,
+            matched,
+            sat,
+            deliveries,
+            pops,
+            dpa,
+            ret_steps,
+            rspd,
+            stuck_searching,
+            stuck_returning,
+            stuck_carrying_food,
         )
         self.samples.append(sample)
         return sample
@@ -182,6 +210,9 @@ class MillDiagnostics:
             "tick",
             "mill_index",
             "matched_ants",
+            "stuck_searching",
+            "stuck_returning",
+            "stuck_carrying_food",
         ]
         for i in range(self.n_species):
             header += [
@@ -189,6 +220,7 @@ class MillDiagnostics:
                 f"population_s{i}",
                 f"deliveries_per_ant_1000_s{i}",
                 f"return_steps_sum_s{i}",
+                f"return_steps_per_delivery_s{i}",
             ]
         for sp, ch in sat_keys:
             header.append(f"saturation_s{sp}_ch{ch}")
@@ -200,13 +232,18 @@ class MillDiagnostics:
                     s.tick,
                     "" if s.mill_index is None else s.mill_index,
                     s.matched_ants,
+                    s.stuck_searching,
+                    s.stuck_returning,
+                    s.stuck_carrying_food,
                 ]
                 for i in range(self.n_species):
+                    rspd = s.return_steps_per_delivery[i] if i < len(s.return_steps_per_delivery) else float("nan")
                     row += [
                         s.deliveries[i],
                         s.population[i],
                         s.deliveries_per_ant_1000[i],
                         s.return_steps_sum[i],
+                        "" if math.isnan(rspd) else rspd,
                     ]
                 for k in sat_keys:
                     row.append(s.saturation.get(k, ""))
@@ -268,6 +305,60 @@ class MillDiagnostics:
             fig.savefig(img_path)
             plt.close(fig)
         return csv_path, img_path
+
+    def measure_recovery(
+        self,
+        sim,
+        *,
+        remove_food_fn: Any | None = None,
+        max_ticks: int = 5000,
+        step: int = 50,
+        target_mill: float = 0.1,
+    ) -> dict[str, Any]:
+        """Measure recovery after food removal.
+
+        `remove_food_fn(sim)` is called once to remove the food source. If omitted,
+        all food cells are zeroed via direct array access when possible. The
+        simulation is stepped until `max_ticks` elapsed or mill index drops below
+        `target_mill` (when measurable). Returns recovery ticks and sample trace.
+        """
+        tick0 = int(sim.tick) if not callable(getattr(sim, "tick", None)) else int(sim.tick())
+        if remove_food_fn is not None:
+            remove_food_fn(sim)
+        else:
+            fv = sim.food_volume()
+            fd = sim.food_density()
+            fv[...] = 0
+            fd[...] = 0
+
+        trace: list[dict[str, Any]] = []
+        recovered_tick: int | None = None
+        elapsed = 0
+        while elapsed < max_ticks:
+            n = min(step, max_ticks - elapsed)
+            sim.step(n)
+            elapsed += n
+            tick = int(sim.tick) if not callable(getattr(sim, "tick", None)) else int(sim.tick())
+            sample = self.maybe_record(tick, sim)
+            if sample is None:
+                continue
+            trace.append(
+                {
+                    "tick": tick,
+                    "mill_index": sample.mill_index,
+                    "max_saturation": max(sample.saturation.values()) if sample.saturation else 0.0,
+                }
+            )
+            if sample.mill_index is not None and sample.mill_index <= target_mill:
+                recovered_tick = tick
+                break
+        return {
+            "start_tick": tick0,
+            "recovered_tick": recovered_tick,
+            "recovery_ticks": None if recovered_tick is None else recovered_tick - tick0,
+            "target_mill": target_mill,
+            "trace": trace,
+        }
 
 
 def make_mill_scenario_map(

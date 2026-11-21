@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import itertools
 import json
 from pathlib import Path
+from typing import Any
 
 from formicae_ui.analytics.mill_diagnostics import (
     MillDiagnostics,
@@ -17,6 +19,20 @@ from formicae_ui.analytics.mill_diagnostics import (
     make_mill_scenario_map,
 )
 from formicae_ui.config import load_config
+
+SWEEP_CONFIG_KEYS = (
+    "seeds.sim_seed",
+    "pheromone.decay_scale",
+    "species.0.a_food",
+    "species.0.a_home",
+    "species.0.trail_len_food",
+    "species.0.trail_len_home",
+    "species.0.deposit_home_while_searching",
+    "pheromone.tau_cap",
+    "species.0.explore_timer_max",
+    "species.0.memory_radius",
+    "species.0.goal_max_distance",
+)
 
 
 def load_sim(cfg: dict, map_data: dict, prefer_mock: bool = False):
@@ -30,6 +46,27 @@ def load_sim(cfg: dict, map_data: dict, prefer_mock: bool = False):
     sim = formicae.Simulation(cfg)
     sim.initialize(map_data)
     return sim
+
+
+def _nav_get(d: dict, dotted: str):
+    cur: Any = d
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def config_hash(cfg: dict) -> str:
+    h = hashlib.sha256()
+    for key in SWEEP_CONFIG_KEYS:
+        h.update(key.encode())
+        h.update(repr(_nav_get(cfg, key)).encode())
+    return h.hexdigest()[:16]
+
+
+def engine_kind(prefer_mock: bool) -> str:
+    return "mock" if prefer_mock else "c++"
 
 
 def run_one(cfg: dict, map_data: dict, ticks: int, prefer_mock: bool = False) -> dict:
@@ -54,6 +91,9 @@ def run_one(cfg: dict, map_data: dict, ticks: int, prefer_mock: bool = False) ->
         for s in diag.samples
         if s.saturation
     ]
+    stuck_searching = sum(s.stuck_searching for s in diag.samples)
+    stuck_returning = sum(s.stuck_returning for s in diag.samples)
+    stuck_carrying_food = sum(s.stuck_carrying_food for s in diag.samples)
     return {
         "deliveries": deliveries,
         "deliveries_per_ant_1000": dpa,
@@ -63,6 +103,9 @@ def run_one(cfg: dict, map_data: dict, ticks: int, prefer_mock: bool = False) ->
         "last_mill_index": (mill_vals[-1] if mill_vals else None),
         "max_saturation_index": (max(sat_vals) if sat_vals else 0.0),
         "last_saturation_index": (sat_vals[-1] if sat_vals else 0.0),
+        "stuck_searching": stuck_searching,
+        "stuck_returning": stuck_returning,
+        "stuck_carrying_food": stuck_carrying_food,
     }
 
 
@@ -110,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         result = run_one(cfg, map_data, args.ticks, prefer_mock=args.mock)
         row = {
+            "engine": engine_kind(args.mock),
+            "config_hash": config_hash(cfg),
             "a_food": a_food,
             "a_home": a_food / 3.0,
             "decay_scale": decay_scale,

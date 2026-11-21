@@ -241,6 +241,11 @@ int Engine::spawn_ant(int colony, int caste, int cell) {
     a.state = static_cast<uint8_t>(AntState::Searching);
     a.last_dir = static_cast<int8_t>(Dir::None);
     a.health = species_table_.get(a.species, a.caste).max_health;
+    a.explore_timer = 0;
+    a.fidelity_fail = 0;
+    a.pad = 0;
+    a.food_x = -1;
+    a.food_y = -1;
     grid_.occupancy[cell] = slot;
     colonies_[colony].population += 1;
     metrics_.population[a.species] += 1;

@@ -1,6 +1,7 @@
 // grid.hpp - structure-of-arrays world layers and the grid API (spec sections 2 and 9.4).
 // Owner: P1 (M1). M2 uses only the accessors below (the spec's free functions are Grid methods).
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -58,9 +59,14 @@ struct Grid {
     return pher.data() + (static_cast<size_t>(species) * NUM_CHANNELS + channel) * cells();
   }
   float pher_at(int species, int channel, int i) const { return plane(species, channel)[i]; }
-  void deposit(int species, int channel, int i, float amount) {  // capped at P_MAX
+  void deposit(int species, int channel, int i, float amount, float cap = P_MAX) {  // capped
     float& p = plane(species, channel)[i];
-    p = p + amount > P_MAX ? P_MAX : p + amount;
+    if (cap < P_MAX && channel != static_cast<int>(Channel::Danger)) {
+      const float room = std::max(0.0f, 1.0f - p / cap);
+      p = std::min(P_MAX, p + amount * room);
+    } else {
+      p = p + amount > P_MAX ? P_MAX : p + amount;
+    }
   }
 };
 

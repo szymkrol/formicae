@@ -53,6 +53,8 @@ void deposit_trail(Engine &e, const Ant &a, const ResolvedStats &st, int cell) {
         searching ? st.a_home * fade
                   : st.a_food * fade *
                         std::min(1.0f, a.carried_density / e.config().pheromone.food_density_ref);
+    if (searching && !st.deposit_home_while_searching)
+        return;
     e.deposit(a.species, searching ? Channel::Home : Channel::Food, cell, amount);
 }
 
@@ -102,6 +104,57 @@ void try_friendly_swap(Engine &e, int slot, const ResolvedStats &st) {
     finish_step(e, b, sb, from);
 }
 
+bool has_food_memory(const Ant &a) { return a.food_x >= 0 && a.food_y >= 0; }
+
+void clear_food_memory(Ant &a) {
+    a.food_x = -1;
+    a.food_y = -1;
+}
+
+bool goal_mode_active(const Ant &a, const ResolvedStats &) {
+    return a.state == static_cast<uint8_t>(AntState::Searching) && a.carried_volume <= 0.0f &&
+           has_food_memory(a) && a.explore_timer == 0;
+}
+
+bool near_remembered_food(const Ant &a) {
+    if (!has_food_memory(a))
+        return false;
+    const int dx = std::abs(static_cast<int>(a.x) - a.food_x);
+    const int dy = std::abs(static_cast<int>(a.y) - a.food_y);
+    return std::max(dx, dy) <= 1;
+}
+
+void erase_local_food(Engine &e, Ant &a, const ResolvedStats &st, int cell) {
+    Grid &g = e.grid();
+    float &p = g.plane(a.species, static_cast<int>(Channel::Food))[cell];
+    p *= std::clamp(st.food_erase_factor, 0.0f, 1.0f);
+    a.explore_timer = static_cast<uint8_t>(std::max<int>(a.explore_timer, st.explore_ticks));
+}
+
+bool maybe_active_erase(Engine &e, Ant &a, const ResolvedStats &st, int cell, bool picked_food) {
+    if (picked_food || a.state != static_cast<uint8_t>(AntState::Searching) ||
+        on_friendly_hill(e, a, cell) || a.explore_timer != 0)
+        return false;
+    Grid &g = e.grid();
+    if (g.food_volume[cell] > 0.0f)
+        return false;
+    for (int n : g.neighbors4(cell).cell)
+        if (n >= 0 && g.food_volume[n] > 0.0f)
+            return false;
+    float *food = g.plane(a.species, static_cast<int>(Channel::Food));
+    const float cur = food[cell];
+    if (cur < st.food_erase_tau)
+        return false;
+    float max_n = cur;
+    for (int n : g.neighbors4(cell).cell)
+        if (n >= 0)
+            max_n = std::max(max_n, food[n]);
+    if (max_n - cur > st.food_erase_delta)
+        return false;
+    erase_local_food(e, a, st, cell);
+    return true;
+}
+
 void move_ant(Engine &e, int slot, const ResolvedStats &st) {
     Ant &a = e.ants()[slot];
     Grid &g = e.grid();
@@ -135,14 +188,18 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
     const bool searching = a.state == static_cast<uint8_t>(AntState::Searching);
     const bool returning = a.state == static_cast<uint8_t>(AntState::Returning);
     const bool lost = (searching || returning) && is_lost(a, st);
-    const bool lost_searching = searching && lost && a.carried_volume <= 0.0f;
-    const Channel channel = (searching && !lost_searching) ? Channel::Food : Channel::Home;
+    const bool goal_mode = goal_mode_active(a, st);
+    const bool lost_searching = searching && lost && !goal_mode && a.carried_volume <= 0.0f;
+    const bool ignore_food_pher = searching && a.explore_timer > 0;
+    const Channel channel = (searching && !lost_searching && !goal_mode) ? Channel::Food : Channel::Home;
     const PheromoneParams &pp = e.config().pheromone;
     const MovementParams &mv = e.config().movement;
     const float *plane = g.plane(a.species, static_cast<int>(channel));
     auto tau_at = [&](int dx, int dy) {
         const int x = a.x + dx;
         const int y = a.y + dy;
+        if (ignore_food_pher && channel == Channel::Food)
+            return 0.0f;
         return g.in_bounds(x, y) ? plane[g.idx(x, y)] : 0.0f;
     };
     float tau_max = 0.0f;
@@ -166,7 +223,8 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
 
     const float s_trail = std::min(1.0f, tau_max / mv.noise_tau_ref);
     const float damp_eff = std::clamp(st.noise_damp * mv.noise_damp_scale, 0.0f, 1.0f);
-    const float p_rnd = st.random_move_prob * (1.0f - damp_eff * s_trail);
+    const float p_rnd = st.random_move_prob * (1.0f - damp_eff * s_trail) *
+                         (goal_mode ? std::clamp(st.goal_random_move_frac, 0.0f, 1.0f) : 1.0f);
     const float r = e.rng().next_float();
 
     int choice = 0;
@@ -176,7 +234,7 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
         std::array<float, 4> nav{1.0f, 1.0f, 1.0f, 1.0f};
         const bool use_nav = fleeing || returning || lost_searching;
         const float beta_eff = st.nav_beta * mv.nav_scale;
-        if (use_nav && beta_eff > 0.0f && e.colonies()[a.colony].alive) {
+        if (use_nav && !goal_mode && beta_eff > 0.0f && e.colonies()[a.colony].alive) {
             const ColonyRecord &home = e.colonies()[a.colony];
             const float hx = static_cast<float>(home.x - a.x);
             const float hy = static_cast<float>(home.y - a.y);
@@ -191,6 +249,19 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
             }
         }
 
+        std::array<float, 4> goal{1.0f, 1.0f, 1.0f, 1.0f};
+        if (goal_mode && st.goal_beta > 0.0f) {
+            const float gx = static_cast<float>(a.food_x - a.x);
+            const float gy = static_cast<float>(a.food_y - a.y);
+            const float d2 = gx * gx + gy * gy;
+            if (d2 > 0.0f) {
+                const float inv = 1.0f / std::sqrt(d2);
+                const std::array<float, 4> align{-gy * inv, gx * inv, gy * inv, -gx * inv};
+                for (int dir = 0; dir < 4; ++dir)
+                    goal[dir] = std::clamp(1.0f + st.goal_beta * align[dir], 0.3f, 3.0f);
+            }
+        }
+
         const float danger_k = g.pher_at(a.species, static_cast<int>(Channel::Home), from) >= 0.9f
                                    ? st.danger_k_home
                                    : st.danger_k;
@@ -200,8 +271,10 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
             const int dir = directions[k];
             if (dir == a.last_dir && st.forward_bonus == 0.0f)
                 continue;
-            weights[k] = static_cast<double>(e.config().pheromone.epsilon) +
-                         g.pher_at(a.species, static_cast<int>(channel), neighbors.cell[dir]);
+            const float pher = (ignore_food_pher && channel == Channel::Food)
+                                   ? 0.0f
+                                   : g.pher_at(a.species, static_cast<int>(channel), neighbors.cell[dir]);
+            weights[k] = static_cast<double>(e.config().pheromone.epsilon) + pher;
             largest_trail = std::max(largest_trail, weights[k]);
         }
         double total = 0.0;
@@ -215,12 +288,12 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
             const float danger = fleeing ? 1.0f : std::clamp(1.0f - danger_k * alarm, 0.05f, 3.0f);
             // Divide out a common factor so even large alpha values retain a nonzero total.
             weights[k] = std::pow(weights[k] / largest_trail, st.alpha) * heading * danger;
-            if (pp.grad_beta > 0.0f) {
+            if (pp.grad_beta > 0.0f && !(ignore_food_pher && channel == Channel::Food)) {
                 const float align_g = nx * DX[dir] + ny * DY[dir];
                 const float grad = std::clamp(1.0f + pp.grad_beta * align_g, kGradMin, kGradMax);
                 weights[k] *= grad;
             }
-            weights[k] *= nav[dir];
+            weights[k] *= nav[dir] * goal[dir];
             total += weights[k];
         }
         double roll = e.rng().next_float() * total;
@@ -268,6 +341,10 @@ bool pick_up_food(Engine &e, Ant &a, const ResolvedStats &st, int cell) {
         g.food_density[source] = 0.0f;
     a.state = static_cast<uint8_t>(AntState::Returning);
     a.trail_age = 0;
+    a.food_x = static_cast<int16_t>(g.x_of(source));
+    a.food_y = static_cast<int16_t>(g.y_of(source));
+    a.fidelity_fail = 0;
+    a.explore_timer = 0;
     reverse_heading(a);
     deposit_trail(e, a, st, cell);
     return true;
@@ -280,6 +357,8 @@ void ant_update(Engine &e, int slot) {
     if (!is_alive(a))
         return;
     const ResolvedStats &st = e.stats_of(a);
+    if (a.explore_timer > 0)
+        --a.explore_timer;
     if (a.health <= 0.0f) {
         e.kill_ant(slot, DeathCause::Combat);
         return;
@@ -342,8 +421,22 @@ void ant_update(Engine &e, int slot) {
     if (a.state == static_cast<uint8_t>(AntState::Searching)) {
         if (on_friendly_hill(e, a, cell))
             a.trail_age = 0;
-        if (pick_up_food(e, a, st, cell))
+        if (goal_mode_active(a, st) && is_lost(a, st)) {
+            clear_food_memory(a);
+            a.explore_timer = static_cast<uint8_t>(std::max<int>(a.explore_timer, st.explore_ticks));
+            a.fidelity_fail = static_cast<uint8_t>(std::min<int>(255, a.fidelity_fail + 1));
+        }
+        const bool goal_before = goal_mode_active(a, st);
+        const bool picked = pick_up_food(e, a, st, cell);
+        if (picked)
             return;
+        if (goal_before && near_remembered_food(a) && has_food_memory(a)) {
+            clear_food_memory(a);
+            a.explore_timer = static_cast<uint8_t>(std::max<int>(a.explore_timer, st.explore_ticks));
+            a.fidelity_fail = static_cast<uint8_t>(std::min<int>(255, a.fidelity_fail + 1));
+            erase_local_food(e, a, st, cell);
+        }
+        maybe_active_erase(e, a, st, cell, false);
     } else if (a.state == static_cast<uint8_t>(AntState::Returning) &&
                on_friendly_hill(e, a, cell)) {
         e.metrics().deliveries[a.species] += 1;
@@ -355,6 +448,8 @@ void ant_update(Engine &e, int slot) {
         a.state = static_cast<uint8_t>(AntState::Searching);
         a.trail_age = 0;
         reverse_heading(a);
+        if (!has_food_memory(a) || e.rng().next_float() >= st.p_fid)
+            clear_food_memory(a);
         return;
     }
     move_ant(e, slot, st);

@@ -39,13 +39,17 @@ class AntState(IntEnum):
 
 ANT_DTYPE = np.dtype(
     {
-        "names": ["id", "age", "x", "y", "colony", "trail_age", "species", "caste", "state",
-                  "last_dir", "timer", "pad", "health", "carried_volume", "carried_density",
-                  "move_acc"],
-        "formats": ["<u4", "<u4", "<i2", "<i2", "<u2", "<u2", "u1", "u1", "u1", "i1", "u1",
-                    ("u1", (3,)), "<f4", "<f4", "<f4", "<f4"],
-        "offsets": [0, 4, 8, 10, 12, 14, 16, 17, 18, 19, 20, 21, 24, 28, 32, 36],
-        "itemsize": 40,
+        "names": [
+            "id", "age", "x", "y", "colony", "trail_age", "species", "caste", "state",
+            "last_dir", "timer", "explore_timer", "fidelity_fail", "pad", "health",
+            "carried_volume", "carried_density", "move_acc", "food_x", "food_y",
+        ],
+        "formats": [
+            "<u4", "<u4", "<i2", "<i2", "<u2", "<u2", "u1", "u1", "u1", "i1", "u1",
+            "u1", "u1", "u1", "<f4", "<f4", "<f4", "<f4", "<i2", "<i2",
+        ],
+        "offsets": [0, 4, 8, 10, 12, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 28, 32, 36, 40, 42],
+        "itemsize": 44,
     }
 )
 

@@ -8,7 +8,7 @@
 using namespace formicae;
 
 int main() {
-  static_assert(sizeof(Ant) == 40 && sizeof(ColonyRecord) == 32);
+  static_assert(sizeof(Ant) == 44 && sizeof(ColonyRecord) == 32);
 
   Config cfg;
   cfg.species = {{"Swarmer", SpeciesStats{}}};

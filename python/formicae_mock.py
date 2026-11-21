@@ -295,7 +295,7 @@ class Simulation:
                         self._traffic[ny, nx] += 1
 
                     trail_age = int(self._ants["trail_age"][ant_i])
-                    if returning:
+                    if returning and self._has_food_memory(self._ants[ant_i]):
                         trail_len = max(1.0, float(cfg.get("trail_len_food", 600)))
                         fade = max(0.0, 1.0 - trail_age / trail_len)
                         amount = float(cfg.get("a_food", 0.18)) * fade

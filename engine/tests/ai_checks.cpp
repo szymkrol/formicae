@@ -332,6 +332,8 @@ void test_trail_aging() {
     assert(pher(e, Channel::Home, a.x, a.y) == 0);
 
     returning(a);
+    a.food_x = a.x;
+    a.food_y = a.y;
     a.trail_age = 0;
     ant_update(e, slot);
     assert(a.trail_age == 1);

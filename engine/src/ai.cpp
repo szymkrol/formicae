@@ -40,6 +40,8 @@ bool is_lost(const Ant &a, const ResolvedStats &st) {
     return static_cast<float>(a.trail_age) >= limit;
 }
 
+bool has_food_memory(const Ant &a);
+
 void deposit_trail(Engine &e, const Ant &a, const ResolvedStats &st, int cell) {
     if (a.state == static_cast<uint8_t>(AntState::Fleeing)) {
         e.deposit(a.species, Channel::Danger, cell, e.config().pheromone.hazard_alarm);
@@ -54,6 +56,8 @@ void deposit_trail(Engine &e, const Ant &a, const ResolvedStats &st, int cell) {
                   : st.a_food * fade *
                         std::min(1.0f, a.carried_density / e.config().pheromone.food_density_ref);
     if (searching && !st.deposit_home_while_searching)
+        return;
+    if (!searching && !has_food_memory(a))
         return;
     e.deposit(a.species, searching ? Channel::Home : Channel::Food, cell, amount);
 }

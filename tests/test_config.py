@@ -5,6 +5,11 @@ import pytest
 from formicae_ui.config import ConfigError, load_config, validate_config
 
 DEFAULT = Path(__file__).parent.parent / "configs" / "default.json"
+TRAIL_TUNED_CONFIGS = (
+    DEFAULT,
+    DEFAULT.with_name("scenario_castes.json"),
+    DEFAULT.with_name("scenario_mill.json"),
+)
 
 
 def valid_config():
@@ -14,6 +19,13 @@ def valid_config():
 def test_default_config_is_valid():
     cfg = load_config(DEFAULT)
     assert len(cfg["species"]) == 3
+
+
+@pytest.mark.parametrize("path", TRAIL_TUNED_CONFIGS)
+def test_configs_use_long_range_trail_strengths(path):
+    cfg = load_config(path)
+    assert all(species["a_home"] == 0.3 for species in cfg["species"])
+    assert all(species["a_food"] == 0.6 for species in cfg["species"])
 
 
 def test_unknown_key_is_reported():

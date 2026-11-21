@@ -146,6 +146,7 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
         return g.in_bounds(x, y) ? plane[g.idx(x, y)] : 0.0f;
     };
     float tau_max = 0.0f;
+    float tau_min = 1.0f;
     float nx = 0.0f;
     float ny = 0.0f;
     if (pp.grad_beta > 0.0f) {
@@ -153,18 +154,27 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
         const float w = tau_at(-1, 0), c = tau_at(0, 0), e0 = tau_at(1, 0);
         const float sw = tau_at(-1, 1), s = tau_at(0, 1), se = tau_at(1, 1);
         tau_max = std::clamp(std::max({nw, n, ne, w, c, e0, sw, s, se}), 0.0f, 1.0f);
+        tau_min = std::clamp(std::min({nw, n, ne, w, c, e0, sw, s, se}), 0.0f, 1.0f);
         const float gx = (ne + 2.0f * e0 + se) - (nw + 2.0f * w + sw);
         const float gy = (sw + 2.0f * s + se) - (nw + 2.0f * n + ne);
         nx = gx * 0.25f;
         ny = gy * 0.25f;
     } else {
         for (int dy = -1; dy <= 1; ++dy)
-            for (int dx = -1; dx <= 1; ++dx)
-                tau_max = std::max(tau_max, tau_at(dx, dy));
+            for (int dx = -1; dx <= 1; ++dx) {
+                const float tau = tau_at(dx, dy);
+                tau_max = std::max(tau_max, tau);
+                tau_min = std::min(tau_min, tau);
+            }
         tau_max = std::clamp(tau_max, 0.0f, 1.0f);
+        tau_min = std::clamp(tau_min, 0.0f, 1.0f);
     }
 
     const float s_trail = std::min(1.0f, tau_max / mv.noise_tau_ref);
+    const float trail_directionality =
+        std::min(1.0f, (tau_max - tau_min) / mv.noise_tau_ref);
+    const float nav_confidence =
+        1.0f - tau_max * (0.5f + 0.5f * trail_directionality);
     const float damp_eff = std::clamp(st.noise_damp * mv.noise_damp_scale, 0.0f, 1.0f);
     const float p_rnd = st.random_move_prob * (1.0f - damp_eff * s_trail);
     const float r = e.rng().next_float();
@@ -185,7 +195,7 @@ void move_ant(Engine &e, int slot, const ResolvedStats &st) {
                 const float inv = 1.0f / std::sqrt(d2);
                 const std::array<float, 4> align{-hy * inv, hx * inv, hy * inv, -hx * inv};
                 const float conf = (fleeing || returning || lost_searching) ? 1.0f : 0.0f;
-                const float k = beta_eff * conf * (1.0f - tau_max);
+                const float k = beta_eff * conf * nav_confidence;
                 for (int dir = 0; dir < 4; ++dir)
                     nav[dir] = std::clamp(1.0f + k * align[dir], mv.nav_min, mv.nav_max);
             }

@@ -128,15 +128,15 @@ Each species is one entry in the species table. Stats are not copied into ants; 
 |  | `defend_while_carrying` | Fights back while carrying food | no | yes | no |
 | **Economy** | `cost` | Energy needed to spawn one ant | 60 | 400 | 200 |
 |  | `carry_capacity` | Food volume per trip | 2 | 6 | 4 |
-| **Pheromones** | `a_home` | HOME deposit strength | 0.06 | 0.06 | 0.06 |
-|  | `a_food` | FOOD deposit strength | 0.18 | 0.18 | 0.18 |
+| **Pheromones** | `a_home` | HOME deposit strength | 0.3 | 0.3 | 0.3 |
+|  | `a_food` | FOOD deposit strength | 0.6 | 0.6 | 0.6 |
 |  | `trail_len_home` | Steps over which HOME deposits fade out | 600 | 600 | 600 |
 |  | `trail_len_food` | Steps over which FOOD deposits fade out | 600 | 600 | 600 |
 |  | `danger_k` | Reaction to DANGER: positive avoids, negative is attracted | 0.8 | −0.8 | 2.0 |
 |  | `danger_k_home` | Same, when near home (HOME ≥ 0.9) | −0.5 | −1.0 | 1.0 |
 | **Colony** | `orphan_loss` | Health fraction lost per tick with no live colony | 0.01 | 0.01 | 0.01 |
 
-Global constants shared by all species (configurable): `ε = 0.05` (floor added to pheromone values in movement weights) and `D_REF = 50` (food density that gives a full-strength FOOD trail). Default species trail strengths/lengths are `a_home = 0.06`, `a_food = 0.18`, `trail_len_home = trail_len_food = 600` (tuned for stronger, longer, smoother trails together with §4 defaults).
+Global constants shared by all species (configurable): `ε = 0.05` (floor added to pheromone values in movement weights) and `D_REF = 50` (food density that gives a full-strength FOOD trail). Default species trail strengths/lengths are `a_home = 0.3`, `a_food = 0.6`, `trail_len_home = trail_len_food = 600` (tuned for reliable long-range foraging on the default 512×512 world together with §4 defaults).
 
 **Castes (stretch goal, data model ready from day one).** A caste is a role variant inside one species: it rescales that species' stats and tweaks a few behavior parameters. v1 ships only `STANDARD` (index 0) with all multipliers 1, so enabling castes later needs no format change.
 
@@ -215,9 +215,9 @@ w = (\varepsilon + \tau)^{\alpha} \cdot h \cdot g \cdot \mathrm{grad} \cdot \mat
 | `h` | `forward_bonus` (1.5) if the cell continues the current heading, otherwise 1 |
 | `g` | `clamp(1 − k·d, 0.05, 3)`, where `d` is the DANGER value in the cell and `k` is `danger_k` (or `danger_k_home` when HOME at the ant's own cell is ≥ 0.9). Positive `k` makes the cell less attractive, negative `k` more |
 | `grad` | Sobel gradient bias on the followed channel: `grad = clamp(1 + grad_beta · align(dir), 0.5, 2.0)`, where `align(dir) = nx·DX[dir] + ny·DY[dir]`, `nx = gx/4`, `ny = gy/4`, `gx = (τ_NE + 2τ_E + τ_SE) − (τ_NW + 2τ_W + τ_SW)`, `gy = (τ_SW + 2τ_S + τ_SE) − (τ_NW + 2τ_N + τ_NE)` (x right, y down; out-of-bounds neighbours contribute 0). Controlled by `grad_beta` (default 2.0; 0 disables the bias). |
-| `nav` | Nest-direction bias when `beta_eff = nav_beta * nav_scale > 0` and the colony is alive: with nest center `(cx,cy)`, `hx=cx-ax`, `hy=cy-ay`, `inv=1/sqrt(d2)` if `d2=hx²+hy²>0` else neutral, `align_nav={-hy*inv,hx*inv,hy*inv,-hx*inv}` for `(N,E,S,W)` (y-down), `conf=1`, `k=beta_eff*conf*(1-tau_max)`, `nav[d]=clamp(1+k*align_nav[d], nav_min, nav_max)`. Applied for FLEEING, RETURNING, and lost SEARCHING ants carrying nothing (lost when `lost_mult > 0` and `trail_age >= lost_mult * trail_len_home`; `lost_mult == 0` disables). `nav[d]=1` for other SEARCHING ants, dead colony, or `d2==0`. |
+| `nav` | Nest-direction bias when `beta_eff = nav_beta * nav_scale > 0` and the colony is alive: with nest center `(cx,cy)`, `hx=cx-ax`, `hy=cy-ay`, `inv=1/sqrt(d2)` if `d2=hx²+hy²>0` else neutral, `align_nav={-hy*inv,hx*inv,hy*inv,-hx*inv}` for `(N,E,S,W)` (y-down). Let `tau_min` be the minimum followed-channel value in the same 3×3 neighbourhood and `trail_dir=clamp((tau_max-tau_min)/noise_tau_ref,0,1)`; then `conf=1`, `nav_conf=1-tau_max·(0.5+0.5·trail_dir)`, `k=beta_eff·conf·nav_conf`, and `nav[d]=clamp(1+k·align_nav[d],nav_min,nav_max)`. Applied for FLEEING, RETURNING, and lost SEARCHING ants carrying nothing (lost when `lost_mult > 0` and `trail_age >= lost_mult * trail_len_home`; `lost_mult == 0` disables). `nav[d]=1` for other SEARCHING ants, dead colony, or `d2==0`. |
 
-Edge cases: `(1-tau_max)` lets strong trails override nest bias; FLEEING uses full confidence; SEARCHING is unaffected by `nav`; dead colony or zero displacement yields neutral `nav`; saturated uniform trails yield `tau_max≈1` and suppress random/noise-damped deviation as specified.
+Edge cases: local trail contrast lets a directional saturated trail override nest bias, while a saturated uniform patch retains half nest guidance and cannot reduce navigation to pure heading/noise. Bare ground keeps full nest guidance. FLEEING uses full confidence; SEARCHING is unaffected by `nav`; dead colony or zero displacement yields neutral `nav`; saturated uniform trails still suppress random/noise-damped deviation as specified.
 
 
 Example, a searching Swarmer (`α = 2`) heading north; south is excluded as the way back.

@@ -234,6 +234,22 @@ void test_movement_weights() {
         assert(count > 2700 && count < 3300);
 }
 
+void test_saturated_home_patch_keeps_nest_guidance() {
+    Config cfg = test_config();
+    cfg.species[0].stats.a_home = cfg.species[0].stats.a_food = 0;
+    cfg.species[0].stats.nav_beta = 1.5f;
+    Engine e(cfg);
+    e.initialize(test_map());
+    const int slot = spawn(e);
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            e.deposit(0, Channel::Home, e.grid().idx(8 + dx, 8 + dy), 1.0f);
+
+    const auto counts = sample_moves(e, slot, AntState::Returning, static_cast<int>(Dir::E));
+    assert(counts[0] > 6200); // uniform saturation cannot suppress north-west nest guidance
+    assert(counts[1] < 3500); // an outward heading cannot dominate the nest direction
+}
+
 void test_extreme_movement_weights() {
     Config cfg = test_config();
     cfg.species[0].stats.alpha = 1000;
@@ -753,6 +769,7 @@ int main() {
     test_hill_access();
     test_movement_costs();
     test_movement_weights();
+    test_saturated_home_patch_keeps_nest_guidance();
     test_extreme_movement_weights();
     test_danger_weights();
     test_gradient_biases_uphill();

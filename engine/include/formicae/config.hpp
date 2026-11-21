@@ -44,8 +44,8 @@ struct SpeciesStats {
     float cost = 60;
     float carry_capacity = 2;
     // pheromones
-    float a_home = 0.06f;
-    float a_food = 0.18f;
+    float a_home = 0.3f;
+    float a_food = 0.6f;
     float trail_len_home = 600;
     float trail_len_food = 600;
     float danger_k = 0.8f;

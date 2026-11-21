@@ -3,7 +3,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <algorithm>
 #include <atomic>
+#include <initializer_list>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -19,13 +21,76 @@ constexpr int API_VERSION = 1;
 constexpr int MAX_STEP = 10000;
 
 // ---- dict -> C++ conversion ------------------------------------------------------------------
-template <class T> T opt(const py::dict &d, const char *key, T fallback) {
-    return d.contains(key) ? d[key].cast<T>() : fallback;
-}
+// Converts the config dict (spec section 11) into a Config. Unknown keys and values of the wrong
+// type are collected with their full path (e.g. "species[1].speed") and reported together; range
+// checks happen afterwards in Config::validate(). Sections used only by the Python front end
+// (world, time, render, analytics) are validated by load_config() and ignored here.
+class ConfigReader {
+  public:
+    // One JSON object at `path`; keys outside `allowed` are reported as unknown.
+    class Section {
+      public:
+        Section(ConfigReader &owner, py::handle obj, std::string path,
+                std::initializer_list<const char *> allowed)
+            : owner_(owner), path_(std::move(path)) {
+            if (!py::isinstance<py::dict>(obj)) {
+                owner_.problem(path_ + " must be an object");
+                return;
+            }
+            dict_ = py::reinterpret_borrow<py::dict>(obj);
+            for (auto item : dict_) {
+                const std::string key = py::str(item.first);
+                bool known = false;
+                for (const char *a : allowed)
+                    known = known || key == a;
+                if (!known)
+                    owner_.problem("unknown key '" + join(key) + "'");
+            }
+        }
 
-SpeciesStats stats_from_dict(const py::dict &d) {
+        bool has(const char *key) const { return dict_.contains(key); }
+        py::object at(const char *key) const { return dict_[key]; }
+        std::string join(const std::string &key) const {
+            return path_.empty() ? key : path_ + "." + key;
+        }
+
+        // Leaves `out` unchanged when the key is absent or has the wrong type.
+        template <class T> void get(const char *key, T &out) const {
+            if (!has(key))
+                return;
+            try {
+                out = dict_[key].template cast<T>();
+            } catch (const py::cast_error &) {
+                owner_.problem(join(key) + " has the wrong type");
+            }
+        }
+
+      private:
+        ConfigReader &owner_;
+        std::string path_;
+        py::dict dict_;
+    };
+
+    void problem(std::string msg) { problems_.push_back(std::move(msg)); }
+
+    void throw_if_problems() const {
+        if (problems_.empty())
+            return;
+        std::string msg = "invalid config:";
+        for (const auto &p : problems_)
+            msg += "\n  " + p;
+        throw std::invalid_argument(msg);
+    }
+
+  private:
+    std::vector<std::string> problems_;
+};
+
+using Section = ConfigReader::Section;
+
+SpeciesStats stats_from_dict(const Section &s) {
     SpeciesStats st;
-#define OPT(f) st.f = opt(d, #f, st.f)
+#define OPT(f) s.get(#f, st.f)
     OPT(max_health);
     OPT(max_age);
     OPT(flee_threshold);
@@ -54,9 +119,9 @@ SpeciesStats stats_from_dict(const py::dict &d) {
     return st;
 }
 
-CasteDef caste_from_dict(const py::dict &d) {
+CasteDef caste_from_dict(const Section &s) {
     CasteDef c;
-#define OPT(f) c.f = opt(d, #f, c.f)
+#define OPT(f) s.get(#f, c.f)
     OPT(name);
     OPT(max_health_mul);
     OPT(damage_mul);
@@ -73,53 +138,104 @@ CasteDef caste_from_dict(const py::dict &d) {
     return c;
 }
 
-// Converts the validated config dict produced by python/formicae_ui/config.py (spec section 11).
-// TODO(P4): reject unknown keys here as well; load_config() already does it on the Python side.
-Config config_from_dict(const py::dict &d) {
-    Config cfg;
-    if (d.contains("seeds"))
-        cfg.sim_seed = opt<uint64_t>(d["seeds"].cast<py::dict>(), "sim_seed", cfg.sim_seed);
-    cfg.max_ants_total = opt(d, "max_ants_total", cfg.max_ants_total);
-    cfg.enable_heatmaps = opt(d, "enable_heatmaps", cfg.enable_heatmaps);
-    if (d.contains("terrain"))
-        for (auto item : d["terrain"].cast<py::list>()) {
-            py::dict t = item.cast<py::dict>();
-            TerrainDef def;
-            def.name = opt<std::string>(t, "name", "");
-            def.move_cost = opt(t, "move_cost", 1.0f);
-            def.evap_mod = opt(t, "evap_mod", 1.0f);
-            def.passable = opt(t, "passable", true);
-            def.hazard_damage = opt(t, "hazard_damage", 0.0f);
-            cfg.terrain.push_back(def);
-        }
-    if (d.contains("species"))
-        for (auto item : d["species"].cast<py::list>()) {
-            py::dict s = item.cast<py::dict>();
-            cfg.species.push_back({opt<std::string>(s, "name", ""), stats_from_dict(s)});
-            std::vector<CasteDef> list;
-            if (s.contains("castes"))
-                for (auto c : s["castes"].cast<py::list>())
-                    list.push_back(caste_from_dict(c.cast<py::dict>()));
-            cfg.castes.push_back(list);
-        }
-    if (d.contains("movement")) {
-        py::dict m = d["movement"].cast<py::dict>();
-        MovementParams &mp = cfg.movement;
-        mp.nav_min = opt(m, "nav_min", mp.nav_min);
-        mp.nav_max = opt(m, "nav_max", mp.nav_max);
-        mp.noise_tau_ref = opt(m, "noise_tau_ref", mp.noise_tau_ref);
+// Calls each(item, path) for every element of the array `parent.key`; reports a non-array value.
+template <class F>
+void for_each_item(ConfigReader &reader, const Section &parent, const char *key, F &&each) {
+    if (!parent.has(key))
+        return;
+    py::object list = parent.at(key);
+    if (!py::isinstance<py::list>(list)) {
+        reader.problem(parent.join(key) + " must be an array");
+        return;
     }
-    if (d.contains("pheromone")) {
-        py::dict p = d["pheromone"].cast<py::dict>();
-        PheromoneParams &pp = cfg.pheromone;
-        if (p.contains("decay")) {
-            auto v = p["decay"].cast<std::vector<float>>();
-            if (v.size() != NUM_CHANNELS)
-                throw std::invalid_argument("pheromone.decay needs 3 values");
-            for (int i = 0; i < NUM_CHANNELS; ++i)
-                pp.decay[i] = v[i];
+    size_t index = 0;
+    for (auto item : py::reinterpret_borrow<py::list>(list))
+        each(item, parent.join(key) + "[" + std::to_string(index++) + "]");
+}
+
+Config config_from_dict(const py::dict &d) {
+    ConfigReader reader;
+    Config cfg;
+    const Section root(reader, d, "",
+                       {"world", "time", "pheromone", "movement", "food", "terrain", "species",
+                        "colony", "hostility", "render", "analytics", "seeds", "max_ants_total",
+                        "enable_heatmaps"});
+    root.get("max_ants_total", cfg.max_ants_total);
+    root.get("enable_heatmaps", cfg.enable_heatmaps);
+    if (root.has("seeds"))
+        Section(reader, root.at("seeds"), "seeds", {"sim_seed"}).get("sim_seed", cfg.sim_seed);
+
+    for_each_item(reader, root, "terrain", [&](py::handle item, const std::string &path) {
+        const Section t(reader, item, path,
+                        {"name", "move_cost", "evap_mod", "passable", "hazard_damage"});
+        TerrainDef def;
+        t.get("name", def.name);
+        t.get("move_cost", def.move_cost);
+        t.get("evap_mod", def.evap_mod);
+        t.get("passable", def.passable);
+        t.get("hazard_damage", def.hazard_damage);
+        cfg.terrain.push_back(def);
+    });
+
+    for_each_item(reader, root, "species", [&](py::handle item, const std::string &path) {
+        const Section s(reader, item, path,
+                        {"name",           "castes",         "max_health",
+                         "max_age",        "flee_threshold", "flee_ticks",
+                         "speed",          "random_move_prob", "alpha",
+                         "forward_bonus",  "nav_beta",       "noise_damp",
+                         "damage",         "armor",          "accuracy",
+                         "defend_while_carrying", "cost",    "carry_capacity",
+                         "a_home",         "a_food",         "trail_len_home",
+                         "trail_len_food", "danger_k",       "danger_k_home",
+                         "orphan_loss",    "lost_mult",      "caste_ratio"});
+        SpeciesDef def;
+        s.get("name", def.name);
+        def.stats = stats_from_dict(s);
+        if (s.has("caste_ratio")) {
+            std::vector<float> ratio;
+            s.get("caste_ratio", ratio);
+            if (ratio.empty() || ratio.size() > static_cast<size_t>(MAX_CASTES))
+                reader.problem(s.join("caste_ratio") + " needs 1.." + std::to_string(MAX_CASTES) +
+                               " weights");
+            else {
+                def.caste_ratio.fill(0.0f);
+                std::copy(ratio.begin(), ratio.end(), def.caste_ratio.begin());
+            }
         }
-#define OPT(f) pp.f = opt(p, #f, pp.f)
+        cfg.species.push_back(def);
+        std::vector<CasteDef> castes;
+        for_each_item(reader, s, "castes", [&](py::handle c, const std::string &caste_path) {
+            castes.push_back(caste_from_dict(
+                Section(reader, c, caste_path,
+                        {"name", "max_health_mul", "damage_mul", "armor_mul", "speed_mul",
+                         "carry_mul", "cost_mul", "random_move_prob_add", "a_home_mul",
+                         "a_food_mul", "danger_k_add", "defend_while_carrying"})));
+        });
+        cfg.castes.push_back(castes);
+    });
+
+    if (root.has("movement")) {
+        const Section m(reader, root.at("movement"), "movement",
+                        {"nav_min", "nav_max", "noise_tau_ref", "friendly_swap"});
+        m.get("friendly_swap", cfg.movement.friendly_swap);
+        m.get("nav_min", cfg.movement.nav_min);
+        m.get("nav_max", cfg.movement.nav_max);
+        m.get("noise_tau_ref", cfg.movement.noise_tau_ref);
+    }
+
+    if (root.has("pheromone")) {
+        const Section p(reader, root.at("pheromone"), "pheromone",
+                        {"decay", "decay_scale", "diffusion", "cutoff", "hit_alarm", "death_alarm",
+                         "hazard_alarm", "home_beacon", "food_density_ref", "epsilon",
+                         "grad_beta"});
+        PheromoneParams &pp = cfg.pheromone;
+        std::vector<float> decay(pp.decay.begin(), pp.decay.end());
+        p.get("decay", decay);
+        if (decay.size() == NUM_CHANNELS)
+            std::copy(decay.begin(), decay.end(), pp.decay.begin());
+        else
+            reader.problem("pheromone.decay needs 3 values (HOME, FOOD, DANGER)");
+#define OPT(f) p.get(#f, pp.f)
         OPT(decay_scale);
         OPT(diffusion);
         OPT(cutoff);
@@ -132,10 +248,14 @@ Config config_from_dict(const py::dict &d) {
         OPT(grad_beta);
 #undef OPT
     }
-    if (d.contains("food")) {
-        py::dict f = d["food"].cast<py::dict>();
+
+    if (root.has("food")) {
+        const Section f(reader, root.at("food"), "food",
+                        {"spawn_interval", "spawn_prob", "max_food_cells", "cluster_radius_min",
+                         "cluster_radius_max", "volume_min", "volume_max", "density_min",
+                         "density_max"});
         FoodParams &fp = cfg.food;
-#define OPT(n) fp.n = opt(f, #n, fp.n)
+#define OPT(n) f.get(#n, fp.n)
         OPT(spawn_interval);
         OPT(spawn_prob);
         OPT(max_food_cells);
@@ -147,10 +267,13 @@ Config config_from_dict(const py::dict &d) {
         OPT(density_max);
 #undef OPT
     }
-    if (d.contains("colony")) {
-        py::dict c = d["colony"].cast<py::dict>();
+
+    if (root.has("colony")) {
+        const Section c(reader, root.at("colony"), "colony",
+                        {"hill_radius", "max_health", "initial_energy", "max_population",
+                         "spawn_cooldown", "loot_density"});
         ColonyParams &cp = cfg.colony;
-#define OPT(n) cp.n = opt(c, #n, cp.n)
+#define OPT(n) c.get(#n, cp.n)
         OPT(hill_radius);
         OPT(max_health);
         OPT(initial_energy);
@@ -159,12 +282,28 @@ Config config_from_dict(const py::dict &d) {
         OPT(loot_density);
 #undef OPT
     }
-    if (d.contains("hostility")) { // optional S x S matrix of 0/1
-        auto m = d["hostility"].cast<std::vector<std::vector<int>>>();
-        for (size_t a = 0; a < m.size() && a < static_cast<size_t>(S_MAX); ++a)
-            for (size_t b = 0; b < m[a].size() && b < static_cast<size_t>(S_MAX); ++b)
-                cfg.hostile[a][b] = m[a][b] != 0;
+
+    if (root.has("hostility")) { // optional S x S matrix of 0/1
+        std::vector<std::vector<int>> m;
+        root.get("hostility", m);
+        const size_t n = std::min(cfg.species.size(), static_cast<size_t>(S_MAX));
+        bool square = m.size() == n;
+        for (const auto &row : m)
+            square = square && row.size() == n;
+        if (!square)
+            reader.problem("hostility must be a " + std::to_string(n) + " x " + std::to_string(n) +
+                           " matrix (one row and one column per species)");
+        else
+            for (size_t a = 0; a < n; ++a)
+                for (size_t b = 0; b < n; ++b) {
+                    if (m[a][b] != 0 && m[a][b] != 1)
+                        reader.problem("hostility[" + std::to_string(a) + "][" +
+                                       std::to_string(b) + "] must be 0 or 1");
+                    cfg.hostile[a][b] = m[a][b] != 0;
+                }
     }
+
+    reader.throw_if_problems();
     return cfg;
 }
 
@@ -237,11 +376,22 @@ class Simulation {
         engine_.reset();
     }
     uint64_t tick() const { return engine_.tick(); }
-    void save(const std::string &) {
-        throw py::value_error("save: not implemented yet (P4, priority P2)");
+    void save(const std::string &path) const {
+        guard();
+        if (!engine_.initialized())
+            throw std::runtime_error("save: call initialize() first");
+        engine_.save(path);
     }
-    void load(const std::string &) {
-        throw py::value_error("load: not implemented yet (P4, priority P2)");
+    uint64_t state_hash() const {
+        guard();
+        if (!engine_.initialized())
+            throw std::runtime_error("state_hash: call initialize() first");
+        return engine_.state_hash();
+    }
+    // Replaces the whole engine state, including the config; existing views become invalid.
+    void load(const std::string &path) {
+        guard();
+        engine_ = Engine::load(path);
     }
 
     // controls
@@ -277,6 +427,11 @@ class Simulation {
     py::array ants(py::object self) {
         return view(engine_.ants().data(), {static_cast<py::ssize_t>(engine_.ants().size())}, self);
     }
+    // Heatmap counters (stretch); RuntimeError unless the config sets enable_heatmaps.
+    py::array traffic(py::object self) { return heatmap(engine_.grid().traffic, "traffic", self); }
+    py::array combat_map(py::object self) {
+        return heatmap(engine_.grid().combat, "combat_map", self);
+    }
     py::array colonies(py::object self) {
         return view(engine_.colonies().data(),
                     {static_cast<py::ssize_t>(engine_.colonies().size())}, self);
@@ -300,6 +455,10 @@ class Simulation {
         d["colonies_alive"] = copy(m.colonies_alive);
         d["deliveries"] = copy(m.deliveries);
         d["return_steps_sum"] = copy(m.return_steps_sum);
+        py::array_t<int64_t> by_caste({static_cast<py::ssize_t>(m.population.size()),
+                                       static_cast<py::ssize_t>(MAX_CASTES)});
+        std::copy(m.population_caste.begin(), m.population_caste.end(), by_caste.mutable_data());
+        d["population_caste"] = by_caste;
         d["food_total_volume"] = m.food_total_volume;
         d["food_total_energy"] = m.food_total_energy;
         return d;
@@ -361,6 +520,15 @@ class Simulation {
         if (busy_)
             throw std::runtime_error("busy");
     }
+    py::array heatmap(const std::vector<uint32_t> &layer, const char *name,
+                      const py::object &self) const {
+        guard();
+        if (!engine_.initialized())
+            throw std::runtime_error(std::string(name) + ": call initialize() first");
+        if (!engine_.config().enable_heatmaps)
+            throw std::runtime_error(std::string(name) + ": enable_heatmaps is not set");
+        return view(layer.data(), {H(), W()}, self);
+    }
     py::ssize_t W() const { return engine_.grid().W; }
     py::ssize_t H() const { return engine_.grid().H; }
 
@@ -397,6 +565,7 @@ PYBIND11_MODULE(formicae, m) {
         .def_property_readonly("tick", &Simulation::tick)
         .def("save", &Simulation::save, py::arg("path"))
         .def("load", &Simulation::load, py::arg("path"))
+        .def("state_hash", &Simulation::state_hash)
         .def("spawn_food", &Simulation::spawn_food, py::arg("x"), py::arg("y"), py::arg("radius"),
              py::arg("volume"), py::arg("density"))
         .def("set_terrain", &Simulation::set_terrain, py::arg("x"), py::arg("y"),
@@ -413,6 +582,8 @@ PYBIND11_MODULE(formicae, m) {
         .def("pheromones",
              [](py::object self) { return self.cast<Simulation &>().pheromones(self); })
         .def("ants", [](py::object self) { return self.cast<Simulation &>().ants(self); })
-        .def("colonies", [](py::object self) { return self.cast<Simulation &>().colonies(self); });
-    // TODO(P4/P1): traffic() and combat_map() when enable_heatmaps is set (stretch).
+        .def("colonies", [](py::object self) { return self.cast<Simulation &>().colonies(self); })
+        .def("traffic", [](py::object self) { return self.cast<Simulation &>().traffic(self); })
+        .def("combat_map",
+             [](py::object self) { return self.cast<Simulation &>().combat_map(self); });
 }

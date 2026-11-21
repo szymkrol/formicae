@@ -32,6 +32,7 @@ struct Metrics {
     std::vector<int64_t> population, births, kills;
     std::vector<int64_t> deaths_combat, deaths_hazard, deaths_age, deaths_orphan;
     std::vector<int64_t> colonies_alive, deliveries, return_steps_sum;
+    std::vector<int64_t> population_caste; // live ants, [species * MAX_CASTES + caste] (spec 5.2)
     double food_total_volume = 0, food_total_energy = 0;
     void resize(int species);
 };
@@ -46,6 +47,17 @@ class Engine {
     uint64_t step(int n = 1);            // runs n ticks, returns the new tick number
     uint64_t tick() const { return tick_; }
     bool initialized() const { return initialized_; }
+
+    // --- snapshots (spec 9.3 save/load, implemented in io.cpp) ---------------------------------
+    // Binary "ANTS" snapshot of the complete state (config, RNG, layers, ants, colonies, metrics).
+    // save() throws std::logic_error before initialize(), std::invalid_argument on I/O errors.
+    void save(const std::string &path) const;
+    // Returns the engine stored in `path`; throws std::invalid_argument for unreadable or invalid
+    // files. A loaded engine continues exactly like the one that was saved.
+    static Engine load(const std::string &path);
+    // 64-bit fingerprint of everything a snapshot stores: equal hashes mean equal states, so
+    // same-seed runs, save/load round trips and resets can be compared cheaply (spec 3).
+    uint64_t state_hash() const;
 
     // --- runtime controls (I4); throw std::invalid_argument on bad input -----------------------
     void set_param(const std::string &name,
@@ -84,6 +96,9 @@ class Engine {
     void deposit(int species, Channel ch, int cell, float amount) {
         grid_.deposit(species, static_cast<int>(ch), cell, amount);
     }
+    // Heatmap counters (stretch): no-ops unless enable_heatmaps is set; saturate instead of wrap.
+    void count_traffic(int cell) { bump(grid_.traffic, cell); }
+    void count_hit(int cell) { bump(grid_.combat, cell); }
 
   private:
     struct PendingDeath {
@@ -105,6 +120,12 @@ class Engine {
     void place_hills(const std::vector<MapData::Hill> &hills);
 
     void rebuild_decay_factors();
+    // Writes every piece of state that a snapshot stores, in file order (io.cpp).
+    template <class Archive> void write_state(Archive &ar) const;
+    static void bump(std::vector<uint32_t> &layer, int cell) {
+        if (!layer.empty() && layer[cell] != UINT32_MAX)
+            ++layer[cell];
+    }
 
     Config cfg_;
     Grid grid_;

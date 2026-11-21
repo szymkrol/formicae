@@ -37,6 +37,12 @@ HOTKEY_CONSTANTS = (
     "K_RIGHTBRACKET",
     "K_f",
     "K_r",
+    "K_TAB",
+    "K_s",
+    "K_c",
+    "K_a",
+    "K_t",
+    "K_h",
 )
 
 
@@ -58,7 +64,8 @@ def test_hotkey_constants_exist():
     assert missing == [], f"unknown pygame key constants: {missing}"
 
 
-def test_keydown_handlers_do_not_crash(app_env):
+def test_keydown_handlers_do_not_crash(app_env, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # K_s writes a snapshot into the working directory
     app, camera, renderer, sim = app_env
     pygame.display.init()
     try:

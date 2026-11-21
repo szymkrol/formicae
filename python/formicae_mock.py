@@ -6,8 +6,14 @@ simulated. Owner: P4 (M0). Keep it in sync with engine/bindings/module.cpp (API_
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
+import json
+import os
+import zipfile
+
 import numpy as np
-from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE, NUM_CHANNELS, AntState
+from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE, MAX_CASTES, NUM_CHANNELS, AntState
 
 __version__ = "0.1.0-mock"
 API_VERSION = 1
@@ -21,6 +27,9 @@ _PARAMS = {
     "noise_damp_scale": (0.0, 2.0),
 }
 _DIRS = np.array([(0, -1), (1, 0), (0, 1), (-1, 0)])
+# Snapshot file: "ANTS" + little-endian u32 format version, then an .npz archive (no pickles).
+_SNAPSHOT_HEADER = b"ANTS" + (1).to_bytes(4, "little")
+_MAP_ARRAYS = ("terrain", "food_volume", "food_density", "colonies")
 
 
 class Simulation:
@@ -30,6 +39,7 @@ class Simulation:
         if not 1 <= self._n_species <= 8:
             raise ValueError("species: need 1..8 entries")
         self._seed = int(config.get("seeds", {}).get("sim_seed", 1))
+        self._heatmaps = bool(config.get("enable_heatmaps", False))
         self._ready = False
         self._tick = 0
         self._params = {k: 0.0 for k in _PARAMS}
@@ -55,6 +65,9 @@ class Simulation:
         self._food_volume = m["food_volume"].copy()
         self._food_density = m["food_density"].copy()
         self._pher = np.zeros((self._n_species, NUM_CHANNELS, m["height"], m["width"]), np.float32)
+        heat_shape = (m["height"], m["width"]) if self._heatmaps else (0, 0)
+        self._traffic = np.zeros(heat_shape, np.uint32)
+        self._combat = np.zeros(heat_shape, np.uint32)
         hills = m["colonies"]
         self._colonies = np.zeros(len(hills), dtype=COLONY_DTYPE)
         self._colonies["x"], self._colonies["y"], self._colonies["species"] = hills.T
@@ -81,6 +94,8 @@ class Simulation:
             self._ants["x"] = np.clip(self._ants["x"] + d[:, 0], 1, w - 2)
             self._ants["y"] = np.clip(self._ants["y"] + d[:, 1], 1, h - 2)
             self._ants["age"] += 1
+            if self._heatmaps:
+                np.add.at(self._traffic, (self._ants["y"], self._ants["x"]), 1)
             self._tick += 1
         return self._tick
 
@@ -93,11 +108,85 @@ class Simulation:
     def tick(self) -> int:
         return self._tick
 
+    def state_hash(self) -> int:
+        """64-bit fingerprint of everything save() stores (same contract as the C++ module)."""
+        if not self._ready:
+            raise RuntimeError("state_hash: call initialize() first")
+        digest = hashlib.blake2b(digest_size=8)
+        meta, arrays = self._snapshot()
+        digest.update(json.dumps(meta, sort_keys=True).encode())
+        for name in sorted(arrays):
+            digest.update(name.encode())
+            digest.update(np.ascontiguousarray(arrays[name]).tobytes())
+        return int.from_bytes(digest.digest(), "little")
+
+    def _snapshot(self) -> tuple[dict, dict]:
+        meta = {
+            "config": self._config,
+            "seed": self._seed,
+            "tick": self._tick,
+            "params": self._params,
+            "rng": self._rng.bit_generator.state,
+            "width": int(self._map["width"]),
+            "height": int(self._map["height"]),
+        }
+        arrays = {f"map_{k}": self._map[k] for k in _MAP_ARRAYS}
+        arrays.update(
+            terrain=self._terrain, food_volume=self._food_volume, food_density=self._food_density,
+            pher=self._pher, ants=self._ants, colonies=self._colonies, traffic=self._traffic,
+            combat=self._combat,
+        )
+        return meta, arrays
+
     def save(self, path: str) -> None:
-        raise ValueError("save: not implemented in the mock")
+        if not self._ready:
+            raise RuntimeError("save: call initialize() first")
+        meta, arrays = self._snapshot()
+        arrays["meta"] = np.frombuffer(json.dumps(meta).encode(), np.uint8)
+        tmp = f"{path}.tmp"
+        try:
+            with open(tmp, "wb") as fh:
+                fh.write(_SNAPSHOT_HEADER)
+                np.savez(fh, **arrays)
+            os.replace(tmp, path)
+        except OSError as err:
+            with contextlib.suppress(OSError):
+                os.remove(tmp)
+            raise ValueError(f"save: cannot write '{path}': {err}") from err
 
     def load(self, path: str) -> None:
-        raise ValueError("load: not implemented in the mock")
+        try:
+            with open(path, "rb") as fh:
+                if fh.read(len(_SNAPSHOT_HEADER)) != _SNAPSHOT_HEADER:
+                    raise ValueError(f"load: '{path}' is not a valid snapshot (bad header)")
+                with np.load(fh, allow_pickle=False) as data:
+                    arrays = {k: data[k] for k in data.files}
+            meta = json.loads(arrays.pop("meta").tobytes())
+        except (OSError, KeyError, zipfile.BadZipFile, json.JSONDecodeError) as err:
+            raise ValueError(f"load: '{path}' is not a valid snapshot: {err}") from err
+        required = {f"map_{k}" for k in _MAP_ARRAYS} | {
+            "terrain", "food_volume", "food_density", "pher", "ants", "colonies", "traffic",
+            "combat",
+        }
+        if missing := required - arrays.keys():
+            raise ValueError(f"load: '{path}' is not a valid snapshot (missing {sorted(missing)})")
+        restored = Simulation(meta["config"])  # validates the stored config like a fresh one
+        restored._map = {"width": meta["width"], "height": meta["height"]}
+        restored._map.update({k: arrays[f"map_{k}"] for k in _MAP_ARRAYS})
+        restored._reset_state()
+        restored._ready = True
+        restored._tick = meta["tick"]
+        restored._params = meta["params"]
+        restored._rng.bit_generator.state = meta["rng"]
+        restored._terrain = arrays["terrain"]
+        restored._food_volume = arrays["food_volume"]
+        restored._food_density = arrays["food_density"]
+        restored._pher = arrays["pher"]
+        restored._ants = arrays["ants"]
+        restored._colonies = arrays["colonies"]
+        restored._traffic = arrays["traffic"]
+        restored._combat = arrays["combat"]
+        self.__dict__.update(restored.__dict__)
 
     # --- controls ----------------------------------------------------------------------------
     def spawn_food(self, x: int, y: int, radius: int, volume: float, density: float) -> int:
@@ -161,6 +250,19 @@ class Simulation:
     def ants(self): return self._ro(self._ants)
     def colonies(self): return self._ro(self._colonies)
 
+    def traffic(self):
+        return self._ro(self._heatmap("traffic", self._traffic))
+
+    def combat_map(self):
+        return self._ro(self._heatmap("combat_map", self._combat))
+
+    def _heatmap(self, name: str, layer: np.ndarray) -> np.ndarray:
+        if not self._ready:
+            raise RuntimeError(f"{name}: call initialize() first")
+        if not self._heatmaps:
+            raise RuntimeError(f"{name}: enable_heatmaps is not set")
+        return layer
+
     def metrics(self) -> dict:
         s = self._n_species
         pop = np.bincount(self._ants["species"], minlength=s).astype(np.int64)
@@ -171,6 +273,7 @@ class Simulation:
             "deaths_orphan": zeros(),
             "colonies_alive": np.bincount(self._colonies["species"], minlength=s).astype(np.int64),
             "deliveries": zeros(), "return_steps_sum": zeros(),
+            "population_caste": np.pad(pop[:, None], ((0, 0), (0, MAX_CASTES - 1))),
             "food_total_volume": float(self._food_volume.sum()),
             "food_total_energy": float((self._food_volume * self._food_density).sum()),
         }

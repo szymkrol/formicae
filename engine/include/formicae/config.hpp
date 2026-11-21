@@ -59,6 +59,8 @@ struct SpeciesStats {
 struct SpeciesDef {
     std::string name;
     SpeciesStats stats;
+    // Spawn weights per caste for this species' colonies (spec 5.2, 7.1); STANDARD only by default.
+    std::array<float, MAX_CASTES> caste_ratio{1.0f, 0.0f, 0.0f, 0.0f};
 };
 
 // A caste is a role variant inside one species (spec 5.2). Index 0 is STANDARD (all neutral).
@@ -93,6 +95,9 @@ struct MovementParams {
     float noise_tau_ref = 0.3f;
     float nav_scale = 1.0f;        // runtime-only, not JSON
     float noise_damp_scale = 1.0f; // runtime-only, not JSON
+    // Jam avoidance (stretch, spec 13.2 P2): an ant with no free cell may swap places with a
+    // same-species ant heading straight at it. Off by default, so default runs are unchanged.
+    bool friendly_swap = false;
 };
 
 struct FoodParams {

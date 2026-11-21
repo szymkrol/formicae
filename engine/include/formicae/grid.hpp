@@ -24,6 +24,9 @@ struct Grid {
   std::vector<int32_t> occupancy;                  // ant slot index or NO_ANT
   std::vector<int16_t> hill_id;                    // colony index or NO_HILL
   std::vector<float> pher;                         // [S][3][H][W]
+  // Heatmap counters (stretch, spec 10); empty unless Config::enable_heatmaps is set.
+  std::vector<uint32_t> traffic;                   // +1 whenever an ant enters the cell
+  std::vector<uint32_t> combat;                    // +1 per hit landed on the cell
 
   void allocate(int width, int height, int species_count);  // sizes all layers, clears them
 

@@ -15,6 +15,7 @@ void Metrics::resize(int species) {
     for (auto *v : {&population, &births, &kills, &deaths_combat, &deaths_hazard, &deaths_age,
                     &deaths_orphan, &colonies_alive, &deliveries, &return_steps_sum})
         v->assign(species, 0);
+    population_caste.assign(static_cast<size_t>(species) * MAX_CASTES, 0);
 }
 
 Engine::Engine(Config cfg) : cfg_(std::move(cfg)) {
@@ -37,6 +38,13 @@ void Engine::initialize(const MapData &map) {
     grid_.terrain = map.terrain;
     grid_.food_volume = map.food_volume;
     grid_.food_density = map.food_density;
+    if (cfg_.enable_heatmaps) {
+        grid_.traffic.assign(grid_.cells(), 0);
+        grid_.combat.assign(grid_.cells(), 0);
+    } else {
+        grid_.traffic.clear();
+        grid_.combat.clear();
+    }
     build_derived_layers();
 
     diffusion_buffer_.resize(grid_.cells());
@@ -89,6 +97,7 @@ void Engine::place_hills(const std::vector<MapData::Hill> &hills) {
         const int idx = static_cast<int>(colonies_.size());
         colonies_.push_back(c);
         colony_extra_.emplace_back();
+        colony_extra_.back().caste_ratio = cfg_.species[h.species].caste_ratio;
         metrics_.colonies_alive[h.species] += 1;
         for (int dy = -r; dy <= r; ++dy)
             for (int dx = -r; dx <= r; ++dx)
@@ -235,6 +244,7 @@ int Engine::spawn_ant(int colony, int caste, int cell) {
     grid_.occupancy[cell] = slot;
     colonies_[colony].population += 1;
     metrics_.population[a.species] += 1;
+    metrics_.population_caste[a.species * MAX_CASTES + a.caste] += 1;
     metrics_.births[a.species] += 1;
     return slot;
 }
@@ -246,6 +256,7 @@ void Engine::kill_ant(int slot, DeathCause cause, int killer_species) {
     grid_.occupancy[grid_.idx(a.x, a.y)] = NO_ANT;
     colonies_[a.colony].population -= 1;
     metrics_.population[a.species] -= 1;
+    metrics_.population_caste[a.species * MAX_CASTES + a.caste] -= 1;
     // The ant keeps x, y, species, carried_* until on_ant_death() ran (pipeline step 4).
     a.state = static_cast<uint8_t>(AntState::Dead);
     pending_deaths_.push_back({slot, cause, killer_species});

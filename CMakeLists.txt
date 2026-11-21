@@ -12,6 +12,7 @@ endif()
 option(FORMICAE_NATIVE "Compile with -march=native (not portable)" OFF)
 option(FORMICAE_BUILD_PYTHON "Build the pybind11 module" ON)
 option(FORMICAE_BUILD_TESTS "Build C++ tests" OFF)
+option(FORMICAE_BUILD_BENCH "Build the formicae_bench performance harness" OFF)
 
 # ---- C++ engine (modules M1 + M2) ---------------------------------------------------------------
 add_library(formicae_engine STATIC
@@ -63,4 +64,16 @@ if(FORMICAE_BUILD_TESTS)
   add_executable(ai_checks engine/tests/ai_checks.cpp)
   target_link_libraries(ai_checks PRIVATE formicae_engine)
   add_test(NAME ai_checks COMMAND ai_checks)
+  add_executable(io_checks engine/tests/io_checks.cpp)
+  target_link_libraries(io_checks PRIVATE formicae_engine)
+  add_test(NAME io_checks COMMAND io_checks)
+  add_executable(invariant_checks engine/tests/invariant_checks.cpp)
+  target_link_libraries(invariant_checks PRIVATE formicae_engine)
+  add_test(NAME invariant_checks COMMAND invariant_checks)
+endif()
+
+# ---- performance harness (spec section 3 targets) -------------------------------------------------
+if(FORMICAE_BUILD_BENCH)
+  add_executable(formicae_bench engine/bench/bench.cpp)
+  target_link_libraries(formicae_bench PRIVATE formicae_engine)
 endif()

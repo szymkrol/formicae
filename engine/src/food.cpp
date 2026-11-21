@@ -62,6 +62,8 @@ void Engine::set_param(const std::string &name, double value) {
     if (name == "decay_scale") {
         in(0, 10);
         cfg_.pheromone.decay_scale = static_cast<float>(value);
+        if (initialized_)
+            rebuild_decay_factors(); // decay uses the precomputed per-cell factor planes (spec 4)
     } else if (name == "diffusion") {
         in(0, 0.2);
         cfg_.pheromone.diffusion = static_cast<float>(value);

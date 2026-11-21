@@ -10,14 +10,22 @@ namespace formicae {
 namespace {
 
 // Picks a caste index according to caste_ratio, restricted to the castes the species really has.
-// Draws from the RNG only when there is an actual choice, so single-caste runs stay unaffected.
+// Draws from the RNG only when more than one caste has a positive weight, so a run with the
+// default ratio [1, 0, 0, 0] is bit-identical to one without castes (spec 5.2 acceptance).
 int pick_caste(Engine& e, const ColonyRecord& colony, const ColonyExtra& extra) {
   const int castes = e.species_table().caste_count(colony.species);
   if (castes <= 1) return 0;
 
   float total = 0.0f;
-  for (int c = 0; c < castes; ++c) total += std::max(0.0f, extra.caste_ratio[c]);
-  if (total <= 0.0f) return 0;
+  int weighted = 0, only = 0;
+  for (int c = 0; c < castes; ++c) {
+    if (extra.caste_ratio[c] <= 0.0f) continue;
+    total += extra.caste_ratio[c];
+    ++weighted;
+    only = c;
+  }
+  if (weighted == 0) return 0;
+  if (weighted == 1) return only;
 
   float roll = e.rng().next_float() * total;
   for (int c = 0; c < castes; ++c) {

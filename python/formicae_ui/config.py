@@ -42,7 +42,7 @@ SECTION_KEYS = {
         "epsilon",
         "grad_beta",
     },
-    "movement": {"nav_min", "nav_max", "noise_tau_ref"},
+    "movement": {"nav_min", "nav_max", "noise_tau_ref", "friendly_swap"},
     "food": {
         "spawn_interval",
         "spawn_prob",
@@ -94,6 +94,7 @@ SPECIES_KEYS = {
     "danger_k_home",
     "orphan_loss",
     "lost_mult",
+    "caste_ratio",
 }
 CASTE_KEYS = {
     "name",
@@ -109,7 +110,8 @@ CASTE_KEYS = {
     "danger_k_add",
     "defend_while_carrying",
 }
-TERRAIN_NAMES = {"GRASS", "SAND", "MUD", "PATH", "ROCK", "WATER", "THORNS"}
+# Terrain ids of spec section 2: the engine indexes the terrain table by id, so order matters.
+TERRAIN_NAMES = ("GRASS", "SAND", "MUD", "PATH", "ROCK", "WATER", "THORNS")
 SPECIES_RANGES = {
     "max_health": (0, None, False),
     "max_age": (1, 2**32 - 1, True),
@@ -256,6 +258,7 @@ def validate_config(cfg: Any) -> list[str]:
 
     movement = cfg.get("movement")
     if isinstance(movement, dict):
+        _check_bool(movement, "friendly_swap", "movement.friendly_swap", problems)
         _check_number_range(
             movement, "nav_min", "movement.nav_min", problems, 0, None, low_inclusive=False
         )
@@ -351,17 +354,14 @@ def validate_config(cfg: Any) -> list[str]:
         else:
             if len(terrain) != 7:
                 problems.append("terrain must contain exactly 7 terrain definitions")
-            names: list[str] = []
             for index, item in enumerate(terrain):
                 path = f"terrain[{index}]"
                 if not _check_object(item, path, TERRAIN_KEYS, problems):
                     continue
-                name = item.get("name")
-                if not isinstance(name, str) or name not in TERRAIN_NAMES:
-                    allowed_names = ", ".join(sorted(TERRAIN_NAMES))
-                    problems.append(f"{path}.name must be one of {allowed_names}")
-                else:
-                    names.append(name)
+                if index < len(TERRAIN_NAMES) and item.get("name") != TERRAIN_NAMES[index]:
+                    problems.append(
+                        f"{path}.name must be {TERRAIN_NAMES[index]} (terrain ids are fixed)"
+                    )
                 _check_number_range(
                     item, "move_cost", f"{path}.move_cost", problems, 0, None, low_inclusive=False
                 )
@@ -370,8 +370,6 @@ def validate_config(cfg: Any) -> list[str]:
                 _check_number_range(
                     item, "hazard_damage", f"{path}.hazard_damage", problems, 0, None
                 )
-            if len(names) == len(terrain) and set(names) != TERRAIN_NAMES:
-                problems.append("terrain must define each terrain name exactly once")
 
     species = cfg.get("species")
     if not isinstance(species, list):
@@ -412,6 +410,7 @@ def validate_config(cfg: Any) -> list[str]:
         if not isinstance(castes, list):
             problems.append(f"{path}.castes must be an array")
             continue
+        _check_caste_ratio(item, path, max(1, len(castes)), problems)
         if len(castes) > MAX_CASTES:
             problems.append(f"{path}.castes must contain at most {MAX_CASTES} entries")
         for caste_index, caste in enumerate(castes):
@@ -445,6 +444,24 @@ def validate_config(cfg: Any) -> list[str]:
                         problems.append(f"hostility[{row_index}][{col_index}] must be 0 or 1")
 
     return problems
+
+
+def _check_caste_ratio(species: dict, path: str, n_castes: int, problems: list[str]) -> None:
+    """Spawn weights per caste (spec 5.2): non-negative, one positive, only for defined castes."""
+    if "caste_ratio" not in species:
+        return
+    ratio = species["caste_ratio"]
+    if not isinstance(ratio, list) or not 1 <= len(ratio) <= MAX_CASTES:
+        problems.append(f"{path}.caste_ratio must be an array of 1..{MAX_CASTES} weights")
+        return
+    for index, value in enumerate(ratio):
+        _check_value_range(value, f"{path}.caste_ratio[{index}]", problems, 0, None)
+        if _is_finite_number(value) and value > 0 and index >= n_castes:
+            problems.append(
+                f"{path}.caste_ratio[{index}] weights a caste the species does not define"
+            )
+    if not any(_is_finite_number(value) and value > 0 for value in ratio):
+        problems.append(f"{path}.caste_ratio needs at least one positive weight")
 
 
 def _check_object(value: Any, path: str, allowed: set[str], problems: list[str]) -> bool:

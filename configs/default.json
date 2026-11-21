@@ -8,6 +8,7 @@
         "sim_seed": 7
     },
     "max_ants_total": 150000,
+    "enable_heatmaps": true,
     "time": {
         "base_tps": 30,
         "frame_budget_ms": 10
@@ -125,7 +126,42 @@
             "orphan_loss": 0.01,
             "nav_beta": 1.5,
             "noise_damp": 0.8,
-            "lost_mult": 1.0
+            "lost_mult": 1.0,
+            "castes": [
+                {
+                    "name": "STANDARD"
+                },
+                {
+                    "name": "EXPLORER",
+                    "random_move_prob_add": 0.15,
+                    "a_home_mul": 0.5,
+                    "a_food_mul": 0.5,
+                    "max_health_mul": 0.8,
+                    "carry_mul": 0.5,
+                    "cost_mul": 0.8
+                },
+                {
+                    "name": "GATHERER",
+                    "carry_mul": 1.5,
+                    "speed_mul": 0.9,
+                    "damage_mul": 0.5,
+                    "defend_while_carrying": false
+                },
+                {
+                    "name": "FIGHTER",
+                    "carry_mul": 0.0,
+                    "damage_mul": 1.5,
+                    "max_health_mul": 1.5,
+                    "danger_k_add": -1.0,
+                    "cost_mul": 1.5
+                }
+            ],
+            "caste_ratio": [
+                1,
+                0,
+                0,
+                0
+            ]
         },
         {
             "name": "Tank",
@@ -152,7 +188,42 @@
             "orphan_loss": 0.01,
             "nav_beta": 1.5,
             "noise_damp": 0.8,
-            "lost_mult": 1.0
+            "lost_mult": 1.0,
+            "castes": [
+                {
+                    "name": "STANDARD"
+                },
+                {
+                    "name": "EXPLORER",
+                    "random_move_prob_add": 0.15,
+                    "a_home_mul": 0.5,
+                    "a_food_mul": 0.5,
+                    "max_health_mul": 0.8,
+                    "carry_mul": 0.5,
+                    "cost_mul": 0.8
+                },
+                {
+                    "name": "GATHERER",
+                    "carry_mul": 1.5,
+                    "speed_mul": 0.9,
+                    "damage_mul": 0.5,
+                    "defend_while_carrying": false
+                },
+                {
+                    "name": "FIGHTER",
+                    "carry_mul": 0.0,
+                    "damage_mul": 1.5,
+                    "max_health_mul": 1.5,
+                    "danger_k_add": -1.0,
+                    "cost_mul": 1.5
+                }
+            ],
+            "caste_ratio": [
+                1,
+                0,
+                0,
+                0
+            ]
         },
         {
             "name": "Nomad",
@@ -179,7 +250,42 @@
             "orphan_loss": 0.01,
             "nav_beta": 1.5,
             "noise_damp": 0.8,
-            "lost_mult": 2.0
+            "lost_mult": 2.0,
+            "castes": [
+                {
+                    "name": "STANDARD"
+                },
+                {
+                    "name": "EXPLORER",
+                    "random_move_prob_add": 0.15,
+                    "a_home_mul": 0.5,
+                    "a_food_mul": 0.5,
+                    "max_health_mul": 0.8,
+                    "carry_mul": 0.5,
+                    "cost_mul": 0.8
+                },
+                {
+                    "name": "GATHERER",
+                    "carry_mul": 1.5,
+                    "speed_mul": 0.9,
+                    "damage_mul": 0.5,
+                    "defend_while_carrying": false
+                },
+                {
+                    "name": "FIGHTER",
+                    "carry_mul": 0.0,
+                    "damage_mul": 1.5,
+                    "max_health_mul": 1.5,
+                    "danger_k_add": -1.0,
+                    "cost_mul": 1.5
+                }
+            ],
+            "caste_ratio": [
+                1,
+                0,
+                0,
+                0
+            ]
         }
     ],
     "render": {

@@ -1,7 +1,8 @@
 """Map rendering (spec section 10). Owner: P6.
 
 Pipeline per frame: take the visible cell crop -> build an RGB array with NumPy (terrain palette
-LUT, food tint, ants colored by species, optional pheromone overlay) -> blit_array -> scale.
+LUT, food tint, ants colored by species/caste or by state, optional pheromone and heatmap
+overlays) -> blit_array -> scale.
 Never process all cells each frame; always work on the crop.
 """
 from __future__ import annotations
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from formicae_ui.types import Channel
+from formicae_ui.types import MAX_CASTES, AntState, Channel
 from formicae_ui.ui.camera import Camera
 
 TERRAIN_COLORS = np.array(
@@ -31,7 +32,37 @@ SPECIES_COLORS = np.array(
     dtype=np.uint8,
 )
 
+# Castes are drawn as shades of the species color (spec 5.2): blend factors toward white (> 0) or
+# black (< 0) for STANDARD, the 2nd, 3rd and 4th caste.
+CASTE_SHADES = (0.0, 0.35, 0.65, -0.5)
+
+
+def _shade(color: np.ndarray, amount: float) -> np.ndarray:
+    target = 255.0 if amount > 0 else 0.0
+    return color + (target - color) * abs(amount)
+
+
+# [species, caste, rgb]
+SPECIES_CASTE_COLORS = np.array(
+    [[_shade(c.astype(np.float32), a) for a in CASTE_SHADES] for c in SPECIES_COLORS],
+    dtype=np.uint8,
+)
+# Ant colors when the UI shows states instead of species (key A).
+STATE_COLORS = {
+    AntState.SEARCHING: (235, 235, 235),
+    AntState.RETURNING: (255, 150, 30),
+    AntState.FIGHTING: (230, 25, 25),
+    AntState.FLEEING: (215, 80, 255),
+}
+_STATE_LUT = np.zeros((256, 3), dtype=np.uint8)
+for _state, _rgb in STATE_COLORS.items():
+    _STATE_LUT[int(_state)] = _rgb
+
 FOOD_COLOR = np.array((235, 205, 40), dtype=np.uint8)
+# Heatmap overlays (stretch): traffic and combat counters, log-scaled.
+HEATMAP_COLORS = {"traffic": np.array((40, 230, 255), np.float32),
+                  "combat": np.array((255, 30, 30), np.float32)}
+HEATMAP_MAX_ALPHA = 0.85
 # HOME, FOOD, DANGER
 OVERLAY_COLORS = np.array(
     [(60, 120, 255), (60, 255, 120), (255, 60, 60)], dtype=np.float32
@@ -47,7 +78,25 @@ class OverlayState:
     show_pheromones: bool = False
     channel: Channel = Channel.FOOD
     species: int = 0
-    show_heatmap: bool = False  # stretch (P5)
+    heatmap: str | None = None  # None, "traffic" or "combat" (stretch, key T)
+    color_by_state: bool = False  # key A: ants colored by state instead of species/caste
+
+
+def ant_colors(ants: np.ndarray, by_state: bool) -> np.ndarray:
+    """RGB per ant: species color shaded by caste, or the state color (STATE_COLORS)."""
+    if by_state:
+        return _STATE_LUT[ants["state"]]
+    species = ants["species"].astype(np.intp) % len(SPECIES_COLORS)
+    caste = np.minimum(ants["caste"].astype(np.intp), MAX_CASTES - 1)
+    return SPECIES_CASTE_COLORS[species, caste]
+
+
+def heatmap_alpha(counts: np.ndarray) -> np.ndarray:
+    """Log-scaled opacity in [0, HEATMAP_MAX_ALPHA], normalized to the largest count shown."""
+    peak = int(counts.max()) if counts.size else 0
+    if peak == 0:
+        return np.zeros(counts.shape, np.float32)
+    return (np.log1p(counts.astype(np.float32)) / np.log1p(peak)) * HEATMAP_MAX_ALPHA
 
 
 class Renderer:
@@ -101,14 +150,20 @@ class Renderer:
             a = np.clip(p, 0.0, 1.0)[..., None]
             img = (img.astype(np.float32) * (1.0 - a) + tint * a).astype(np.uint8)
 
+        if overlay.heatmap is not None and views.heat is not None:
+            a = heatmap_alpha(views.heat[y0:y1, x0:x1])[..., None]
+            tint = HEATMAP_COLORS[overlay.heatmap]
+            img = (img.astype(np.float32) * (1.0 - a) + tint * a).astype(np.uint8)
+
         ants = views.ants
         ants = ants[ants["state"] != 255]
         ax = ants["x"].astype(np.int32) - x0
         ay = ants["y"].astype(np.int32) - y0
         inside = (ax >= 0) & (ay >= 0) & (ax < x1 - x0) & (ay < y1 - y0)
         use_sprites = cam.zoom >= ANT_SPRITE_ZOOM
+        colors = ant_colors(ants[inside], overlay.color_by_state)
         if not use_sprites:
-            img[ay[inside], ax[inside]] = SPECIES_COLORS[ants["species"][inside]]
+            img[ay[inside], ax[inside]] = colors
 
         surf = pygame.surfarray.make_surface(img.swapaxes(0, 1))
         size = (max(1, int((x1 - x0) * cam.zoom)), max(1, int((y1 - y0) * cam.zoom)))
@@ -117,10 +172,10 @@ class Renderer:
         self.screen.blit(surf, origin)
 
         if use_sprites and inside.any():
-            self._draw_ant_sprites(ants["species"][inside], ax[inside], ay[inside], origin)
+            self._draw_ant_sprites(colors, ax[inside], ay[inside], origin)
 
     def _draw_ant_sprites(
-        self, species: np.ndarray, ax: np.ndarray, ay: np.ndarray, origin: tuple[float, float]
+        self, colors: np.ndarray, ax: np.ndarray, ay: np.ndarray, origin: tuple[float, float]
     ) -> None:
         """Draw ants as small filled circles in screen space (readable at high zoom)."""
         import pygame
@@ -128,11 +183,10 @@ class Renderer:
         cam = self.camera
         ox, oy = origin
         r = max(2, int(ANT_SPRITE_RADIUS * min(2.0, cam.zoom / ANT_SPRITE_ZOOM)))
-        for i in range(len(species)):
+        for i in range(len(colors)):
             sx = int(ox + (ax[i] + 0.5) * cam.zoom)
             sy = int(oy + (ay[i] + 0.5) * cam.zoom)
-            color = tuple(int(c) for c in SPECIES_COLORS[int(species[i])])
-            pygame.draw.circle(self.screen, color, (sx, sy), r)
+            pygame.draw.circle(self.screen, tuple(int(c) for c in colors[i]), (sx, sy), r)
 
     def cell_at(self, sx: int, sy: int) -> tuple[int, int]:
         """Cell under a screen position, for the inspector / spawn-food mode."""
@@ -150,8 +204,16 @@ class SimViews:
     pheromones: np.ndarray
     ants: np.ndarray
     colonies: np.ndarray
+    heat: np.ndarray | None = None  # traffic() or combat_map() when a heatmap overlay is on
 
     @classmethod
-    def from_sim(cls, sim) -> SimViews:
+    def from_sim(cls, sim, heatmap: str | None = None) -> SimViews:
+        """`heatmap` ("traffic" / "combat") fetches that counter layer; it raises RuntimeError
+        when the config does not set enable_heatmaps."""
+        heat = None
+        if heatmap == "traffic":
+            heat = sim.traffic()
+        elif heatmap == "combat":
+            heat = sim.combat_map()
         return cls(sim.terrain(), sim.food_volume(), sim.food_density(), sim.pheromones(),
-                   sim.ants(), sim.colonies())
+                   sim.ants(), sim.colonies(), heat)

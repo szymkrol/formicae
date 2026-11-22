@@ -35,6 +35,15 @@ struct SpeciesStats {
     // navigation
     float nav_beta = 1.5f;
     float noise_damp = 0.8f;
+    // memory / mill mitigation
+    float p_fid = 0.95f;
+    float goal_beta = 2.0f;
+    float goal_random_move_frac = 1.0f / 3.0f;
+    int explore_ticks = 40;
+    float food_erase_factor = 0.3f;
+    float food_erase_tau = 0.1f;
+    float food_erase_delta = 0.02f;
+    bool deposit_home_while_searching = true;
     // combat
     float damage = 2;
     float armor = 0;
@@ -44,8 +53,8 @@ struct SpeciesStats {
     float cost = 60;
     float carry_capacity = 2;
     // pheromones
-    float a_home = 0.06f;
-    float a_food = 0.18f;
+    float a_home = 0.3f;
+    float a_food = 0.6f;
     float trail_len_home = 600;
     float trail_len_food = 600;
     float danger_k = 0.8f;
@@ -87,6 +96,7 @@ struct PheromoneParams {
     float food_density_ref = 50; // D_REF
     float epsilon = 0.05f;       // floor in movement weights
     float grad_beta = 2.0f;      // gradient bias strength (0 = no bias, default 2.0)
+    float tau_cap = 1.0f;        // soft cap for HOME/FOOD deposits; 1.0 = legacy hard cap
 };
 
 struct MovementParams {

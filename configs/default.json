@@ -1,309 +1,334 @@
 {
-    "world": {
-        "width": 512,
-        "height": 512,
-        "n_colonies": 3
-    },
-    "seeds": {
-        "sim_seed": 7
-    },
-    "max_ants_total": 150000,
-    "enable_heatmaps": true,
-    "time": {
-        "base_tps": 30,
-        "frame_budget_ms": 10
-    },
-    "pheromone": {
-        "decay": [
-            0.0015,
-            0.001,
-            0.015
-        ],
-        "decay_scale": 1.0,
-        "diffusion": 0.03,
-        "cutoff": 0.001,
-        "hit_alarm": 0.4,
-        "death_alarm": 0.5,
-        "hazard_alarm": 0.3,
-        "home_beacon": 1.0,
-        "food_density_ref": 50,
-        "epsilon": 0.05,
-        "grad_beta": 2.0
-    },
-    "food": {
-        "spawn_interval": 50,
-        "spawn_prob": 0.5,
-        "max_food_cells": 2000,
-        "cluster_radius_min": 1,
-        "cluster_radius_max": 3,
-        "volume_min": 50,
-        "volume_max": 200,
-        "density_min": 10,
-        "density_max": 50
-    },
-    "colony": {
-        "hill_radius": 2,
-        "max_health": 1000,
-        "initial_energy": 600,
-        "max_population": 30000,
-        "spawn_cooldown": 2,
-        "loot_density": 25
-    },
-    "terrain": [
-        {
-            "name": "GRASS",
-            "move_cost": 1.0,
-            "evap_mod": 1.0,
-            "passable": true,
-            "hazard_damage": 0.0
-        },
-        {
-            "name": "SAND",
-            "move_cost": 1.5,
-            "evap_mod": 2.0,
-            "passable": true,
-            "hazard_damage": 0.0
-        },
-        {
-            "name": "MUD",
-            "move_cost": 2.0,
-            "evap_mod": 0.5,
-            "passable": true,
-            "hazard_damage": 0.0
-        },
-        {
-            "name": "PATH",
-            "move_cost": 0.7,
-            "evap_mod": 1.2,
-            "passable": true,
-            "hazard_damage": 0.0
-        },
-        {
-            "name": "ROCK",
-            "move_cost": 1.0,
-            "evap_mod": 1.0,
-            "passable": false,
-            "hazard_damage": 0.0
-        },
-        {
-            "name": "WATER",
-            "move_cost": 1.0,
-            "evap_mod": 1.0,
-            "passable": false,
-            "hazard_damage": 0.0
-        },
-        {
-            "name": "THORNS",
-            "move_cost": 1.5,
-            "evap_mod": 1.0,
-            "passable": true,
-            "hazard_damage": 1.0
-        }
+  "world": {
+    "width": 512,
+    "height": 512,
+    "n_colonies": 3
+  },
+  "seeds": {
+    "sim_seed": 7
+  },
+  "max_ants_total": 150000,
+  "enable_heatmaps": true,
+  "time": {
+    "base_tps": 30,
+    "frame_budget_ms": 10
+  },
+  "pheromone": {
+    "decay": [
+      0.0015,
+      0.001,
+      0.015
     ],
-    "species": [
-        {
-            "name": "Swarmer",
-            "max_health": 10,
-            "max_age": 4000,
-            "flee_threshold": 0.3,
-            "flee_ticks": 15,
-            "speed": 1.0,
-            "random_move_prob": 0.1,
-            "alpha": 2.0,
-            "forward_bonus": 1.5,
-            "damage": 2,
-            "armor": 0,
-            "accuracy": 0.7,
-            "defend_while_carrying": false,
-            "cost": 60,
-            "carry_capacity": 2,
-            "a_home": 0.06,
-            "a_food": 0.18,
-            "trail_len_home": 600,
-            "trail_len_food": 600,
-            "danger_k": 0.8,
-            "danger_k_home": -0.5,
-            "orphan_loss": 0.01,
-            "nav_beta": 1.5,
-            "noise_damp": 0.8,
-            "lost_mult": 1.0,
-            "castes": [
-                {
-                    "name": "STANDARD"
-                },
-                {
-                    "name": "EXPLORER",
-                    "random_move_prob_add": 0.15,
-                    "a_home_mul": 0.5,
-                    "a_food_mul": 0.5,
-                    "max_health_mul": 0.8,
-                    "carry_mul": 0.5,
-                    "cost_mul": 0.8
-                },
-                {
-                    "name": "GATHERER",
-                    "carry_mul": 1.5,
-                    "speed_mul": 0.9,
-                    "damage_mul": 0.5,
-                    "defend_while_carrying": false
-                },
-                {
-                    "name": "FIGHTER",
-                    "carry_mul": 0.0,
-                    "damage_mul": 1.5,
-                    "max_health_mul": 1.5,
-                    "danger_k_add": -1.0,
-                    "cost_mul": 1.5
-                }
-            ],
-            "caste_ratio": [
-                1,
-                0,
-                0,
-                0
-            ]
-        },
-        {
-            "name": "Tank",
-            "max_health": 60,
-            "max_age": 8000,
-            "flee_threshold": 0.0,
-            "flee_ticks": 15,
-            "speed": 0.5,
-            "random_move_prob": 0.05,
-            "alpha": 2.0,
-            "forward_bonus": 1.5,
-            "damage": 6,
-            "armor": 2,
-            "accuracy": 0.6,
-            "defend_while_carrying": true,
-            "cost": 400,
-            "carry_capacity": 6,
-            "a_home": 0.06,
-            "a_food": 0.18,
-            "trail_len_home": 600,
-            "trail_len_food": 600,
-            "danger_k": -0.8,
-            "danger_k_home": -1.0,
-            "orphan_loss": 0.01,
-            "nav_beta": 1.5,
-            "noise_damp": 0.8,
-            "lost_mult": 1.0,
-            "castes": [
-                {
-                    "name": "STANDARD"
-                },
-                {
-                    "name": "EXPLORER",
-                    "random_move_prob_add": 0.15,
-                    "a_home_mul": 0.5,
-                    "a_food_mul": 0.5,
-                    "max_health_mul": 0.8,
-                    "carry_mul": 0.5,
-                    "cost_mul": 0.8
-                },
-                {
-                    "name": "GATHERER",
-                    "carry_mul": 1.5,
-                    "speed_mul": 0.9,
-                    "damage_mul": 0.5,
-                    "defend_while_carrying": false
-                },
-                {
-                    "name": "FIGHTER",
-                    "carry_mul": 0.0,
-                    "damage_mul": 1.5,
-                    "max_health_mul": 1.5,
-                    "danger_k_add": -1.0,
-                    "cost_mul": 1.5
-                }
-            ],
-            "caste_ratio": [
-                1,
-                0,
-                0,
-                0
-            ]
-        },
-        {
-            "name": "Nomad",
-            "max_health": 20,
-            "max_age": 5000,
-            "flee_threshold": 0.5,
-            "flee_ticks": 15,
-            "speed": 0.9,
-            "random_move_prob": 0.2,
-            "alpha": 1.2,
-            "forward_bonus": 1.5,
-            "damage": 3,
-            "armor": 0.5,
-            "accuracy": 0.7,
-            "defend_while_carrying": false,
-            "cost": 200,
-            "carry_capacity": 4,
-            "a_home": 0.06,
-            "a_food": 0.18,
-            "trail_len_home": 600,
-            "trail_len_food": 600,
-            "danger_k": 2.0,
-            "danger_k_home": 1.0,
-            "orphan_loss": 0.01,
-            "nav_beta": 1.5,
-            "noise_damp": 0.8,
-            "lost_mult": 2.0,
-            "castes": [
-                {
-                    "name": "STANDARD"
-                },
-                {
-                    "name": "EXPLORER",
-                    "random_move_prob_add": 0.15,
-                    "a_home_mul": 0.5,
-                    "a_food_mul": 0.5,
-                    "max_health_mul": 0.8,
-                    "carry_mul": 0.5,
-                    "cost_mul": 0.8
-                },
-                {
-                    "name": "GATHERER",
-                    "carry_mul": 1.5,
-                    "speed_mul": 0.9,
-                    "damage_mul": 0.5,
-                    "defend_while_carrying": false
-                },
-                {
-                    "name": "FIGHTER",
-                    "carry_mul": 0.0,
-                    "damage_mul": 1.5,
-                    "max_health_mul": 1.5,
-                    "danger_k_add": -1.0,
-                    "cost_mul": 1.5
-                }
-            ],
-            "caste_ratio": [
-                1,
-                0,
-                0,
-                0
-            ]
-        }
-    ],
-    "render": {
-        "window": [
-            1280,
-            800
-        ],
-        "sidebar_width": 280,
-        "target_fps": 60
+    "decay_scale": 1.0,
+    "diffusion": 0.03,
+    "cutoff": 0.001,
+    "hit_alarm": 0.4,
+    "death_alarm": 0.5,
+    "hazard_alarm": 0.3,
+    "home_beacon": 1.0,
+    "food_density_ref": 50,
+    "epsilon": 0.2,
+    "grad_beta": 2.0,
+    "tau_cap": 1.0
+  },
+  "food": {
+    "spawn_interval": 50,
+    "spawn_prob": 0.5,
+    "max_food_cells": 2000,
+    "cluster_radius_min": 1,
+    "cluster_radius_max": 3,
+    "volume_min": 50,
+    "volume_max": 200,
+    "density_min": 10,
+    "density_max": 50
+  },
+  "colony": {
+    "hill_radius": 2,
+    "max_health": 1000,
+    "initial_energy": 600,
+    "max_population": 30000,
+    "spawn_cooldown": 2,
+    "loot_density": 25
+  },
+  "terrain": [
+    {
+      "name": "GRASS",
+      "move_cost": 1.0,
+      "evap_mod": 1.0,
+      "passable": true,
+      "hazard_damage": 0.0
     },
-    "analytics": {
-        "sample_every_ticks": 10,
-        "redraw_seconds": 1.0,
-        "history_samples": 2000
+    {
+      "name": "SAND",
+      "move_cost": 1.5,
+      "evap_mod": 2.0,
+      "passable": true,
+      "hazard_damage": 0.0
     },
-    "movement": {
-        "nav_min": 0.3,
-        "nav_max": 2.0,
-        "noise_tau_ref": 0.3
+    {
+      "name": "MUD",
+      "move_cost": 2.0,
+      "evap_mod": 0.5,
+      "passable": true,
+      "hazard_damage": 0.0
+    },
+    {
+      "name": "PATH",
+      "move_cost": 0.7,
+      "evap_mod": 1.2,
+      "passable": true,
+      "hazard_damage": 0.0
+    },
+    {
+      "name": "ROCK",
+      "move_cost": 1.0,
+      "evap_mod": 1.0,
+      "passable": false,
+      "hazard_damage": 0.0
+    },
+    {
+      "name": "WATER",
+      "move_cost": 1.0,
+      "evap_mod": 1.0,
+      "passable": false,
+      "hazard_damage": 0.0
+    },
+    {
+      "name": "THORNS",
+      "move_cost": 1.5,
+      "evap_mod": 1.0,
+      "passable": true,
+      "hazard_damage": 1.0
     }
+  ],
+  "species": [
+    {
+      "name": "Swarmer",
+      "max_health": 10,
+      "max_age": 4000,
+      "flee_threshold": 0.3,
+      "flee_ticks": 15,
+      "speed": 1.0,
+      "random_move_prob": 0.1,
+      "alpha": 1.3,
+      "forward_bonus": 1.5,
+      "damage": 2,
+      "armor": 0,
+      "accuracy": 0.7,
+      "defend_while_carrying": false,
+      "cost": 60,
+      "carry_capacity": 2,
+      "a_home": 0.06,
+      "a_food": 0.18,
+      "trail_len_home": 600,
+      "trail_len_food": 600,
+      "danger_k": 0.8,
+      "danger_k_home": -0.5,
+      "orphan_loss": 0.01,
+      "nav_beta": 1.5,
+      "noise_damp": 0.8,
+      "lost_mult": 1.0,
+      "castes": [
+        {
+          "name": "STANDARD"
+        },
+        {
+          "name": "EXPLORER",
+          "random_move_prob_add": 0.15,
+          "a_home_mul": 0.5,
+          "a_food_mul": 0.5,
+          "max_health_mul": 0.8,
+          "carry_mul": 0.5,
+          "cost_mul": 0.8
+        },
+        {
+          "name": "GATHERER",
+          "carry_mul": 1.5,
+          "speed_mul": 0.9,
+          "damage_mul": 0.5,
+          "defend_while_carrying": false
+        },
+        {
+          "name": "FIGHTER",
+          "carry_mul": 0.0,
+          "damage_mul": 1.5,
+          "max_health_mul": 1.5,
+          "danger_k_add": -1.0,
+          "cost_mul": 1.5
+        }
+      ],
+      "caste_ratio": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "p_fid": 0.95,
+      "goal_beta": 2.0,
+      "goal_random_move_frac": 0.3333333333333333,
+      "explore_ticks": 40,
+      "food_erase_factor": 0.3,
+      "food_erase_tau": 0.1,
+      "food_erase_delta": 0.02,
+      "deposit_home_while_searching": false
+    },
+    {
+      "name": "Tank",
+      "max_health": 60,
+      "max_age": 8000,
+      "flee_threshold": 0.0,
+      "flee_ticks": 15,
+      "speed": 0.5,
+      "random_move_prob": 0.05,
+      "alpha": 1.3,
+      "forward_bonus": 1.5,
+      "damage": 6,
+      "armor": 2,
+      "accuracy": 0.6,
+      "defend_while_carrying": true,
+      "cost": 400,
+      "carry_capacity": 6,
+      "a_home": 0.06,
+      "a_food": 0.18,
+      "trail_len_home": 600,
+      "trail_len_food": 600,
+      "danger_k": -0.8,
+      "danger_k_home": -1.0,
+      "orphan_loss": 0.01,
+      "nav_beta": 1.5,
+      "noise_damp": 0.8,
+      "lost_mult": 1.0,
+      "castes": [
+        {
+          "name": "STANDARD"
+        },
+        {
+          "name": "EXPLORER",
+          "random_move_prob_add": 0.15,
+          "a_home_mul": 0.5,
+          "a_food_mul": 0.5,
+          "max_health_mul": 0.8,
+          "carry_mul": 0.5,
+          "cost_mul": 0.8
+        },
+        {
+          "name": "GATHERER",
+          "carry_mul": 1.5,
+          "speed_mul": 0.9,
+          "damage_mul": 0.5,
+          "defend_while_carrying": false
+        },
+        {
+          "name": "FIGHTER",
+          "carry_mul": 0.0,
+          "damage_mul": 1.5,
+          "max_health_mul": 1.5,
+          "danger_k_add": -1.0,
+          "cost_mul": 1.5
+        }
+      ],
+      "caste_ratio": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "p_fid": 0.95,
+      "goal_beta": 2.0,
+      "goal_random_move_frac": 0.3333333333333333,
+      "explore_ticks": 40,
+      "food_erase_factor": 0.3,
+      "food_erase_tau": 0.1,
+      "food_erase_delta": 0.02,
+      "deposit_home_while_searching": false
+    },
+    {
+      "name": "Nomad",
+      "max_health": 20,
+      "max_age": 5000,
+      "flee_threshold": 0.5,
+      "flee_ticks": 15,
+      "speed": 0.9,
+      "random_move_prob": 0.2,
+      "alpha": 1.2,
+      "forward_bonus": 1.5,
+      "damage": 3,
+      "armor": 0.5,
+      "accuracy": 0.7,
+      "defend_while_carrying": false,
+      "cost": 200,
+      "carry_capacity": 4,
+      "a_home": 0.06,
+      "a_food": 0.18,
+      "trail_len_home": 600,
+      "trail_len_food": 600,
+      "danger_k": 2.0,
+      "danger_k_home": 1.0,
+      "orphan_loss": 0.01,
+      "nav_beta": 1.5,
+      "noise_damp": 0.8,
+      "lost_mult": 2.0,
+      "castes": [
+        {
+          "name": "STANDARD"
+        },
+        {
+          "name": "EXPLORER",
+          "random_move_prob_add": 0.15,
+          "a_home_mul": 0.5,
+          "a_food_mul": 0.5,
+          "max_health_mul": 0.8,
+          "carry_mul": 0.5,
+          "cost_mul": 0.8
+        },
+        {
+          "name": "GATHERER",
+          "carry_mul": 1.5,
+          "speed_mul": 0.9,
+          "damage_mul": 0.5,
+          "defend_while_carrying": false
+        },
+        {
+          "name": "FIGHTER",
+          "carry_mul": 0.0,
+          "damage_mul": 1.5,
+          "max_health_mul": 1.5,
+          "danger_k_add": -1.0,
+          "cost_mul": 1.5
+        }
+      ],
+      "caste_ratio": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "p_fid": 0.95,
+      "goal_beta": 2.0,
+      "goal_random_move_frac": 0.3333333333333333,
+      "explore_ticks": 40,
+      "food_erase_factor": 0.3,
+      "food_erase_tau": 0.1,
+      "food_erase_delta": 0.02,
+      "deposit_home_while_searching": false
+    }
+  ],
+  "render": {
+    "window": [
+      1280,
+      800
+    ],
+    "sidebar_width": 280,
+    "target_fps": 60
+  },
+  "analytics": {
+    "sample_every_ticks": 10,
+    "redraw_seconds": 1.0,
+    "history_samples": 2000
+  },
+  "movement": {
+    "nav_min": 0.3,
+    "nav_max": 2.0,
+    "noise_tau_ref": 0.3
+  }
 }

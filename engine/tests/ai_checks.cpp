@@ -234,6 +234,22 @@ void test_movement_weights() {
         assert(count > 2700 && count < 3300);
 }
 
+void test_saturated_home_patch_keeps_nest_guidance() {
+    Config cfg = test_config();
+    cfg.species[0].stats.a_home = cfg.species[0].stats.a_food = 0;
+    cfg.species[0].stats.nav_beta = 1.5f;
+    Engine e(cfg);
+    e.initialize(test_map());
+    const int slot = spawn(e);
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            e.deposit(0, Channel::Home, e.grid().idx(8 + dx, 8 + dy), 1.0f);
+
+    const auto counts = sample_moves(e, slot, AntState::Returning, static_cast<int>(Dir::E));
+    assert(counts[0] > 6200); // uniform saturation cannot suppress north-west nest guidance
+    assert(counts[1] < 3500); // an outward heading cannot dominate the nest direction
+}
+
 void test_extreme_movement_weights() {
     Config cfg = test_config();
     cfg.species[0].stats.alpha = 1000;
@@ -332,6 +348,8 @@ void test_trail_aging() {
     assert(pher(e, Channel::Home, a.x, a.y) == 0);
 
     returning(a);
+    a.food_x = a.x;
+    a.food_y = a.y;
     a.trail_age = 0;
     ant_update(e, slot);
     assert(a.trail_age == 1);
@@ -349,6 +367,41 @@ void test_trail_aging() {
     ant_update(rich, gatherer);
     assert(pher(rich, Channel::Food, 8, 8) == 1);
     assert(rich.ants()[gatherer].last_dir == static_cast<int8_t>(Dir::None));
+}
+
+void test_food_memory_persists_after_delivery() {
+    Config cfg = test_config();
+    cfg.species[0].stats.p_fid = 1.0f;
+    Engine e(cfg);
+    e.initialize(test_map());
+    const int slot = spawn(e, 2, 13, 2);
+    Ant &a = e.ants()[slot];
+    a.state = static_cast<uint8_t>(AntState::Returning);
+    a.carried_volume = 2.0f;
+    a.carried_density = 25.0f;
+    a.food_x = 5;
+    a.food_y = 5;
+    a.last_dir = static_cast<int8_t>(Dir::W);
+
+    ant_update(e, slot); // deliver on friendly hill
+    assert(a.state == static_cast<uint8_t>(AntState::Searching));
+    assert(a.carried_volume == 0.0f);
+    assert(a.food_x == 5 && a.food_y == 5);
+
+    cfg.species[0].stats.p_fid = 0.0f;
+    Engine e2(cfg);
+    e2.initialize(test_map());
+    const int slot2 = spawn(e2, 2, 13, 2);
+    Ant &b = e2.ants()[slot2];
+    b.state = static_cast<uint8_t>(AntState::Returning);
+    b.carried_volume = 2.0f;
+    b.carried_density = 25.0f;
+    b.food_x = 5;
+    b.food_y = 5;
+    b.last_dir = static_cast<int8_t>(Dir::W);
+    ant_update(e2, slot2);
+    assert(b.state == static_cast<uint8_t>(AntState::Searching));
+    assert(b.food_x == -1 && b.food_y == -1);
 }
 
 void test_combat_transitions() {
@@ -753,6 +806,7 @@ int main() {
     test_hill_access();
     test_movement_costs();
     test_movement_weights();
+    test_saturated_home_patch_keeps_nest_guidance();
     test_extreme_movement_weights();
     test_danger_weights();
     test_gradient_biases_uphill();
@@ -766,6 +820,7 @@ int main() {
     test_resolved_castes();
     test_lost_searcher_moves_toward_nest();
     test_lost_mult_zero_regression_simple();
+    test_food_memory_persists_after_delivery();
     test_foraging_pipeline_and_determinism();
     std::puts("ai_checks: OK");
 }

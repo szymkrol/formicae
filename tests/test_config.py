@@ -5,6 +5,11 @@ import pytest
 from formicae_ui.config import ConfigError, load_config, validate_config
 
 DEFAULT = Path(__file__).parent.parent / "configs" / "default.json"
+TRAIL_TUNED_CONFIGS = (
+    DEFAULT,
+    DEFAULT.with_name("scenario_castes.json"),
+    DEFAULT.with_name("scenario_mill.json"),
+)
 
 
 def valid_config():
@@ -14,6 +19,16 @@ def valid_config():
 def test_default_config_is_valid():
     cfg = load_config(DEFAULT)
     assert len(cfg["species"]) == 3
+
+
+@pytest.mark.parametrize("path", TRAIL_TUNED_CONFIGS)
+def test_configs_use_trail_memory_defaults(path):
+    cfg = load_config(path)
+    for species in cfg["species"]:
+        assert 0.0 <= species["a_home"] <= 1.0
+        assert 0.0 <= species["a_food"] <= 1.0
+        assert 0.0 <= species.get("p_fid", 0.7) <= 1.0
+        assert species.get("explore_ticks", 40) >= 0
 
 
 def test_unknown_key_is_reported():
@@ -124,6 +139,45 @@ def test_load_config_raises_config_error_for_invalid_values(tmp_path):
 @pytest.mark.parametrize("value", [None, [], "config"])
 def test_non_object_config_is_reported(value):
     assert validate_config(value) == ["configuration must be a JSON object"]
+
+
+def test_new_pheromone_and_species_memory_keys_validated():
+    cfg = valid_config()
+    cfg["pheromone"]["tau_cap"] = 0.6
+    cfg["species"][0].update(
+        {
+            "p_fid": 0.5,
+            "goal_beta": 3.0,
+            "goal_random_move_frac": 0.25,
+            "explore_ticks": 10,
+            "food_erase_factor": 0.2,
+            "food_erase_tau": 0.05,
+            "food_erase_delta": 0.01,
+            "deposit_home_while_searching": False,
+        }
+    )
+    assert validate_config(cfg) == []
+
+    bad = valid_config()
+    bad["pheromone"]["tau_cap"] = 0
+    bad["species"][0]["p_fid"] = 1.5
+    bad["species"][0]["goal_beta"] = -1
+    bad["species"][0]["goal_random_move_frac"] = 2
+    bad["species"][0]["explore_ticks"] = 256
+    bad["species"][0]["food_erase_factor"] = -0.1
+    bad["species"][0]["food_erase_tau"] = 2
+    bad["species"][0]["food_erase_delta"] = -0.01
+    bad["species"][0]["deposit_home_while_searching"] = 1
+    problems = validate_config(bad)
+    assert any("pheromone.tau_cap" in p for p in problems)
+    assert any("species[0].p_fid" in p for p in problems)
+    assert any("species[0].goal_beta" in p for p in problems)
+    assert any("species[0].goal_random_move_frac" in p for p in problems)
+    assert any("species[0].explore_ticks" in p for p in problems)
+    assert any("species[0].food_erase_factor" in p for p in problems)
+    assert any("species[0].food_erase_tau" in p for p in problems)
+    assert any("species[0].food_erase_delta" in p for p in problems)
+    assert any("species[0].deposit_home_while_searching" in p for p in problems)
 
 
 def test_movement_section_optional_and_validated():

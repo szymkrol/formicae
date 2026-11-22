@@ -16,7 +16,7 @@ import numpy as np
 from formicae_ui.types import ANT_DTYPE, COLONY_DTYPE, MAX_CASTES, NUM_CHANNELS, AntState
 
 __version__ = "0.1.0-mock"
-API_VERSION = 1
+API_VERSION = 2
 _PARAMS = {
     "decay_scale": (0.0, 10.0),
     "diffusion": (0.0, 0.2),
@@ -26,9 +26,9 @@ _PARAMS = {
     "nav_scale": (0.0, 4.0),
     "noise_damp_scale": (0.0, 2.0),
 }
-_DIRS = np.array([(0, -1), (1, 0), (0, 1), (-1, 0)])
+_DIRS = np.array([(0, -1), (1, 0), (0, 1), (-1, 0)], dtype=np.int16)
 # Snapshot file: "ANTS" + little-endian u32 format version, then an .npz archive (no pickles).
-_SNAPSHOT_HEADER = b"ANTS" + (1).to_bytes(4, "little")
+_SNAPSHOT_HEADER = b"ANTS" + (2).to_bytes(4, "little")
 _MAP_ARRAYS = ("terrain", "food_volume", "food_density", "colonies")
 
 
@@ -44,7 +44,69 @@ class Simulation:
         self._tick = 0
         self._params = {k: 0.0 for k in _PARAMS}
 
-    # --- lifecycle ---------------------------------------------------------------------------
+    def _species(self, idx: int) -> dict:
+        return self._config.get("species", [{}])[idx]
+
+    def _pher_params(self) -> dict:
+        p = self._config.get("pheromone", {})
+        return {
+            "decay": np.array(p.get("decay", [0.0015, 0.001, 0.015]), dtype=np.float32),
+            "decay_scale": float(p.get("decay_scale", 1.0)),
+            "diffusion": float(p.get("diffusion", 0.03)),
+            "cutoff": float(p.get("cutoff", 0.001)),
+            "tau_cap": float(p.get("tau_cap", 1.0)),
+            "epsilon": float(p.get("epsilon", 0.05)),
+            "grad_beta": float(p.get("grad_beta", 2.0)),
+            "food_density_ref": float(p.get("food_density_ref", 50.0)),
+        }
+
+    def _deposit(self, species: int, channel: int, y: int, x: int, amount: float) -> None:
+        if amount <= 0:
+            return
+        p = self._pher_params()
+        cap = 1.0 if channel == 2 else float(p["tau_cap"])
+        cur = float(self._pher[species, channel, y, x])
+        if cap < 1.0 and channel != 2:
+            cur = min(1.0, cur + amount * max(0.0, 1.0 - cur / cap))
+        else:
+            cur = min(1.0, cur + amount)
+        self._pher[species, channel, y, x] = cur
+
+    def _on_friendly_hill(self, colony_idx: int, species: int, x: int, y: int) -> bool:
+        colony = self._colonies[colony_idx]
+        return (
+            bool(colony["alive"])
+            and int(colony["species"]) == species
+            and abs(x - int(colony["x"])) <= 2
+            and abs(y - int(colony["y"])) <= 2
+        )
+
+    def _is_lost(self, ant, cfg: dict) -> bool:
+        lost_mult = float(cfg.get("lost_mult", 1.0))
+        if lost_mult <= 0:
+            return False
+        searching = int(ant["state"]) == AntState.SEARCHING
+        trail_len = float(cfg.get("trail_len_home" if searching else "trail_len_food", 600))
+        return float(ant["trail_age"]) >= lost_mult * trail_len
+
+    def _has_food_memory(self, ant) -> bool:
+        return int(ant["food_x"]) >= 0 and int(ant["food_y"]) >= 0
+
+    def _near_remembered_food(self, ant, x: int, y: int) -> bool:
+        return self._has_food_memory(ant) and max(
+            abs(x - int(ant["food_x"])),
+            abs(y - int(ant["food_y"])),
+        ) <= 1
+
+    def _erase_local_food(self, species: int, x: int, y: int, cfg: dict, ant_i: int) -> None:
+        factor = min(1.0, max(0.0, float(cfg.get("food_erase_factor", 0.3))))
+        self._pher[species, 1, y, x] *= factor
+        explore_ticks = int(cfg.get("explore_ticks", 40))
+        self._ants["explore_timer"][ant_i] = max(
+            int(self._ants["explore_timer"][ant_i]),
+            explore_ticks,
+        )
+
     def initialize(self, map_data: dict) -> None:
         for key, dtype in (("terrain", np.uint8), ("food_volume", np.float32),
                            ("food_density", np.float32), ("colonies", np.int32)):
@@ -82,6 +144,48 @@ class Simulation:
         self._ants["colony"], self._ants["species"] = owner, hills[owner, 2]
         self._ants["state"] = AntState.SEARCHING
         self._ants["health"] = 10
+        self._ants["food_x"] = -1
+        self._ants["food_y"] = -1
+        self._ants["explore_timer"] = 0
+        self._ants["fidelity_fail"] = 0
+        self._metrics = self._empty_metrics()
+
+    def _empty_metrics(self) -> dict:
+        s = self._n_species
+        zeros = lambda: np.zeros(s, np.int64)  # noqa: E731
+        return {
+            "tick": self._tick,
+            "population": zeros(),
+            "births": zeros(),
+            "kills": zeros(),
+            "deaths_combat": zeros(),
+            "deaths_hazard": zeros(),
+            "deaths_age": zeros(),
+            "deaths_orphan": zeros(),
+            "colonies_alive": np.bincount(
+                self._colonies[self._colonies["alive"] != 0]["species"],
+                minlength=s,
+            ).astype(np.int64),
+            "deliveries": zeros(),
+            "return_steps_sum": zeros(),
+            "population_caste": np.zeros((s, MAX_CASTES), np.int64),
+            "food_total_volume": float(self._food_volume.sum()),
+            "food_total_energy": float((self._food_volume * self._food_density).sum()),
+        }
+
+    def _refresh_metrics(self) -> None:
+        s = self._n_species
+        pop = np.bincount(self._ants["species"], minlength=s).astype(np.int64)
+        self._metrics["tick"] = self._tick
+        self._metrics["population"] = pop
+        self._metrics["colonies_alive"] = np.bincount(
+            self._colonies[self._colonies["alive"] != 0]["species"], minlength=s
+        ).astype(np.int64)
+        caste = np.zeros((s, MAX_CASTES), np.int64)
+        caste[:, 0] = pop
+        self._metrics["population_caste"] = caste
+        self._metrics["food_total_volume"] = float(self._food_volume.sum())
+        self._metrics["food_total_energy"] = float((self._food_volume * self._food_density).sum())
 
     def step(self, n: int = 1) -> int:
         if not self._ready:
@@ -89,14 +193,191 @@ class Simulation:
         if not 1 <= n <= 10_000:
             raise ValueError("step: n must be in 1..10000")
         h, w = self._terrain.shape
+        pp = self._pher_params()
+        decay = np.clip(1.0 - pp["decay"] * pp["decay_scale"], 0.0, 1.0).astype(np.float32)
         for _ in range(n):
-            d = _DIRS[self._rng.integers(0, 4, len(self._ants))]
-            self._ants["x"] = np.clip(self._ants["x"] + d[:, 0], 1, w - 2)
-            self._ants["y"] = np.clip(self._ants["y"] + d[:, 1], 1, h - 2)
-            self._ants["age"] += 1
-            if self._heatmaps:
-                np.add.at(self._traffic, (self._ants["y"], self._ants["x"]), 1)
             self._tick += 1
+            for ch in range(NUM_CHANNELS):
+                self._pher[:, ch] *= decay[ch]
+            self._pher[self._pher < pp["cutoff"]] = 0.0
+            for ant_i in range(len(self._ants)):
+                a = self._ants[ant_i]
+                if a["state"] == AntState.DEAD:
+                    continue
+                sp = int(a["species"])
+                cfg = self._species(sp)
+                x, y = int(a["x"]), int(a["y"])
+                if a["explore_timer"] > 0:
+                    self._ants["explore_timer"][ant_i] -= 1
+                self._ants["age"][ant_i] += 1
+                colony_idx = int(a["colony"])
+                colony = self._colonies[colony_idx]
+                cx, cy = int(colony["x"]), int(colony["y"])
+                searching = int(a["state"]) == AntState.SEARCHING
+                returning = int(a["state"]) == AntState.RETURNING
+
+                if searching:
+                    if self._on_friendly_hill(colony_idx, sp, x, y):
+                        self._ants["trail_age"][ant_i] = 0
+                    if (
+                        self._has_food_memory(a)
+                        and self._ants["explore_timer"][ant_i] == 0
+                        and self._is_lost(a, cfg)
+                    ):
+                        self._ants["food_x"][ant_i] = -1
+                        self._ants["food_y"][ant_i] = -1
+                        self._ants["explore_timer"][ant_i] = int(cfg.get("explore_ticks", 40))
+                        self._ants["fidelity_fail"][ant_i] = min(255, int(a["fidelity_fail"]) + 1)
+                    goal_before = bool(
+                        int(self._ants["state"][ant_i]) == AntState.SEARCHING
+                        and self._ants["carried_volume"][ant_i] <= 0
+                        and self._has_food_memory(self._ants[ant_i])
+                        and self._ants["explore_timer"][ant_i] == 0
+                    )
+                    if self._food_volume[y, x] > 0:
+                        take = min(
+                            float(cfg.get("carry_capacity", 2)),
+                            float(self._food_volume[y, x]),
+                        )
+                        self._ants["carried_volume"][ant_i] = take
+                        self._ants["carried_density"][ant_i] = float(self._food_density[y, x])
+                        self._food_volume[y, x] -= take
+                        if self._food_volume[y, x] <= 0:
+                            self._food_density[y, x] = 0
+                        self._ants["state"][ant_i] = AntState.RETURNING
+                        self._ants["trail_age"][ant_i] = 0
+                        self._ants["food_x"][ant_i] = x
+                        self._ants["food_y"][ant_i] = y
+                        self._ants["explore_timer"][ant_i] = 0
+                        self._ants["fidelity_fail"][ant_i] = 0
+                        searching = False
+                        returning = True
+                    elif goal_before and self._near_remembered_food(self._ants[ant_i], x, y):
+                        self._ants["food_x"][ant_i] = -1
+                        self._ants["food_y"][ant_i] = -1
+                        self._ants["explore_timer"][ant_i] = int(cfg.get("explore_ticks", 40))
+                        self._ants["fidelity_fail"][ant_i] = min(
+                            255,
+                            int(self._ants["fidelity_fail"][ant_i]) + 1,
+                        )
+                        self._erase_local_food(sp, x, y, cfg, ant_i)
+                elif returning and self._on_friendly_hill(colony_idx, sp, x, y):
+                    self._metrics["deliveries"][sp] += 1
+                    self._metrics["return_steps_sum"][sp] += int(a["trail_age"])
+                    self._ants["carried_volume"][ant_i] = 0
+                    self._ants["carried_density"][ant_i] = 0
+                    self._ants["state"][ant_i] = AntState.SEARCHING
+                    self._ants["trail_age"][ant_i] = 0
+                    if not self._has_food_memory(self._ants[ant_i]) or self._rng.random() >= float(
+                        cfg.get("p_fid", 0.95)
+                    ):
+                        self._ants["food_x"][ant_i] = -1
+                        self._ants["food_y"][ant_i] = -1
+                    searching = True
+                    returning = False
+
+                a = self._ants[ant_i]
+                searching = int(a["state"]) == AntState.SEARCHING
+                returning = int(a["state"]) == AntState.RETURNING
+                goal_mode = bool(
+                    searching
+                    and a["carried_volume"] <= 0
+                    and self._has_food_memory(a)
+                    and int(a["explore_timer"]) == 0
+                )
+
+                dirs = []
+                for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                    nx, ny = x + dx, y + dy
+                    if 1 <= nx < w - 1 and 1 <= ny < h - 1 and self._terrain[ny, nx] not in (4, 5):
+                        dirs.append((dx, dy))
+                moved = False
+                if dirs:
+                    weights = []
+                    for dx, dy in dirs:
+                        nx, ny = x + dx, y + dy
+                        wgt = 1.0 + pp["epsilon"]
+                        if searching and int(a["explore_timer"]) == 0 and not goal_mode:
+                            wgt += float(self._pher[sp, 1, ny, nx])
+                        if returning or (searching and int(a["explore_timer"]) > 0):
+                            wgt += 0.2 * float(self._pher[sp, 0, ny, nx])
+                        if goal_mode:
+                            gx, gy = int(a["food_x"]) - x, int(a["food_y"]) - y
+                            gd = (gx * gx + gy * gy) ** 0.5 or 1.0
+                            align = (gx * dx + gy * dy) / gd
+                            wgt *= max(
+                                0.3,
+                                min(3.0, 1.0 + float(cfg.get("goal_beta", 2.0)) * align),
+                            )
+                        if returning:
+                            hx, hy = cx - x, cy - y
+                            hd = (hx * hx + hy * hy) ** 0.5 or 1.0
+                            wgt *= 1.0 + 0.8 * ((hx * dx + hy * dy) / hd)
+                        weights.append(max(0.001, wgt))
+                    weights = np.array(weights, dtype=np.float64)
+                    weights /= weights.sum()
+                    dx, dy = dirs[int(self._rng.choice(len(dirs), p=weights))]
+                    nx, ny = x + dx, y + dy
+                    self._ants["x"][ant_i] = nx
+                    self._ants["y"][ant_i] = ny
+                    self._ants["trail_age"][ant_i] = min(
+                        65535,
+                        int(self._ants["trail_age"][ant_i]) + 1,
+                    )
+                    if self._heatmaps:
+                        self._traffic[ny, nx] += 1
+
+                    trail_age = int(self._ants["trail_age"][ant_i])
+                    if returning and self._has_food_memory(self._ants[ant_i]):
+                        trail_len = max(1.0, float(cfg.get("trail_len_food", 600)))
+                        fade = max(0.0, 1.0 - trail_age / trail_len)
+                        amount = float(cfg.get("a_food", 0.18)) * fade
+                        food_density_ref = max(1e-6, float(pp.get("food_density_ref", 50.0)))
+                        amount *= min(
+                            1.0,
+                            float(self._ants["carried_density"][ant_i]) / food_density_ref,
+                        )
+                        self._deposit(sp, 1, ny, nx, amount)
+                    elif bool(cfg.get("deposit_home_while_searching", True)):
+                        trail_len = max(1.0, float(cfg.get("trail_len_home", 600)))
+                        fade = max(0.0, 1.0 - trail_age / trail_len)
+                        self._deposit(sp, 0, ny, nx, float(cfg.get("a_home", 0.06)) * fade)
+                    x, y = nx, ny
+                    moved = True
+
+                if (
+                    searching
+                    and moved
+                    and int(self._ants["state"][ant_i]) == AntState.SEARCHING
+                    and self._food_volume[y, x] <= 0
+                ):
+                    if goal_mode and self._near_remembered_food(self._ants[ant_i], x, y):
+                        self._ants["food_x"][ant_i] = -1
+                        self._ants["food_y"][ant_i] = -1
+                        self._ants["fidelity_fail"][ant_i] = min(
+                            255,
+                            int(self._ants["fidelity_fail"][ant_i]) + 1,
+                        )
+                        self._ants["explore_timer"][ant_i] = int(cfg.get("explore_ticks", 40))
+                        self._erase_local_food(sp, x, y, cfg, ant_i)
+                    elif (
+                        int(self._ants["explore_timer"][ant_i]) == 0
+                        and not self._on_friendly_hill(colony_idx, sp, x, y)
+                    ):
+                        cur = float(self._pher[sp, 1, y, x])
+                        if cur >= float(cfg.get("food_erase_tau", 0.1)):
+                            nbr = [cur]
+                            has_food_nbr = self._food_volume[y, x] > 0
+                            for ddx, ddy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                                nnx, nny = x + ddx, y + ddy
+                                if 0 <= nnx < w and 0 <= nny < h:
+                                    nbr.append(float(self._pher[sp, 1, nny, nnx]))
+                                    has_food_nbr = has_food_nbr or self._food_volume[nny, nnx] > 0
+                            if (not has_food_nbr) and max(nbr) - cur <= float(
+                                cfg.get("food_erase_delta", 0.02)
+                            ):
+                                self._erase_local_food(sp, x, y, cfg, ant_i)
+            self._refresh_metrics()
         return self._tick
 
     def reset(self) -> None:
@@ -136,6 +417,8 @@ class Simulation:
             pher=self._pher, ants=self._ants, colonies=self._colonies, traffic=self._traffic,
             combat=self._combat,
         )
+        for k, v in self._metrics.items():
+            arrays[f"metric_{k}"] = np.asarray(v)
         return meta, arrays
 
     def save(self, path: str) -> None:
@@ -186,6 +469,21 @@ class Simulation:
         restored._colonies = arrays["colonies"]
         restored._traffic = arrays["traffic"]
         restored._combat = arrays["combat"]
+        restored._metrics = restored._empty_metrics()
+        for key in restored._metrics:
+            name = f"metric_{key}"
+            if name in arrays:
+                val = arrays[name]
+                if np.isscalar(restored._metrics[key]):
+                    restored._metrics[key] = val.item() if hasattr(val, "item") else val
+                else:
+                    restored._metrics[key] = np.array(val)
+        restored._refresh_metrics()
+        if restored._ants.dtype != ANT_DTYPE:
+            raise ValueError(
+                "load: incompatible ant layout "
+                f"{restored._ants.dtype.itemsize}B; expected 44B (API_VERSION 2)"
+            )
         self.__dict__.update(restored.__dict__)
 
     # --- controls ----------------------------------------------------------------------------
@@ -264,16 +562,7 @@ class Simulation:
         return layer
 
     def metrics(self) -> dict:
-        s = self._n_species
-        pop = np.bincount(self._ants["species"], minlength=s).astype(np.int64)
-        zeros = lambda: np.zeros(s, np.int64)  # noqa: E731
-        return {
-            "tick": self._tick, "population": pop, "births": pop.copy(), "kills": zeros(),
-            "deaths_combat": zeros(), "deaths_hazard": zeros(), "deaths_age": zeros(),
-            "deaths_orphan": zeros(),
-            "colonies_alive": np.bincount(self._colonies["species"], minlength=s).astype(np.int64),
-            "deliveries": zeros(), "return_steps_sum": zeros(),
-            "population_caste": np.pad(pop[:, None], ((0, 0), (0, MAX_CASTES - 1))),
-            "food_total_volume": float(self._food_volume.sum()),
-            "food_total_energy": float((self._food_volume * self._food_density).sum()),
-        }
+        self._refresh_metrics()
+        out = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in self._metrics.items()}
+        out["tick"] = self._tick
+        return out

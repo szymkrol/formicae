@@ -104,8 +104,15 @@ void Config::validate() const {
         within(path + ".random_move_prob", s.random_move_prob, 0, 1);
         at_least(path + ".alpha", s.alpha, 0);
         at_least(path + ".forward_bonus", s.forward_bonus, 0);
-        at_least(path + ".nav_beta", s.nav_beta, 0);
+        within(path + ".nav_beta", s.nav_beta, 0, 8);
         within(path + ".noise_damp", s.noise_damp, 0, 1);
+        within(path + ".p_fid", s.p_fid, 0, 1);
+        at_least(path + ".goal_beta", s.goal_beta, 0);
+        within(path + ".goal_random_move_frac", s.goal_random_move_frac, 0, 1);
+        within(path + ".explore_ticks", s.explore_ticks, 0, 255);
+        within(path + ".food_erase_factor", s.food_erase_factor, 0, 1);
+        within(path + ".food_erase_tau", s.food_erase_tau, 0, 1);
+        within(path + ".food_erase_delta", s.food_erase_delta, 0, 1);
         at_least(path + ".damage", s.damage, 0);
         at_least(path + ".armor", s.armor, 0);
         within(path + ".accuracy", s.accuracy, 0, 1);
@@ -169,6 +176,8 @@ void Config::validate() const {
     above("pheromone.food_density_ref", p.food_density_ref, 0);
     above("pheromone.epsilon", p.epsilon, 0);
     within("pheromone.grad_beta", p.grad_beta, 0, 8);
+    above("pheromone.tau_cap", p.tau_cap, 0);
+    within("pheromone.tau_cap", p.tau_cap, 0, 1);
 
     above("movement.nav_min", movement.nav_min, 0);
     if (!(movement.nav_max >= movement.nav_min))

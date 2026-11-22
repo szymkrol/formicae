@@ -72,19 +72,19 @@ Fixed timestep: the engine knows nothing about wall-clock time. One `step()`:
 
 Channels per species: `HOME=0`, `FOOD=1`, `DANGER=2`. Values in `[0, 1]` (cap `P_MAX = 1`).
 
-- **Deposit:** `p = min(P_MAX, p + a)`.
+- **Deposit:** HOME/FOOD use a soft cap when `tau_cap < P_MAX`: `p += a * max(0, 1 - p / tau_cap)`. When `tau_cap == P_MAX`, HOME/FOOD use the legacy hard cap `p = min(P_MAX, p + a)`. DANGER always uses the hard cap `p = min(P_MAX, p + a)`, regardless of `tau_cap`.
 - **Decay (multiplicative):** `p *= (1 − ρ_c · decay_scale · evap_mod[cell])`, clamp factor to ≥ 0; if `p < cutoff` set `p = 0`. Precompute a per-channel factor plane when `decay_scale` or terrain changes; the loop becomes `p[i] *= f[i]`.
 - **Default ρ (per channel, before `decay_scale`/`evap_mod`):** `ρ_HOME = 0.0015` (half-life ≈ 462 ticks on GRASS), `ρ_FOOD = 0.001` (≈ 693), `ρ_DANGER = 0.015` (≈ 46). Defaults are tuned for slower, more persistent trails; `decay_scale` (runtime, default 1.0) scales all channels together.
 - **Diffusion (optional):** `p' = p + D·(mean4(p) − p)`, `D ∈ [0, 0.2]`, double-buffered, applied before decay (interior cells use 4-neighbour mean; edges/corners retain their pre-diffusion value in the current implementation). Default `D = 0.03` (enabled) to spread and smooth trails; set `D = 0` to disable (skipped when 0). Cost ≈ 5× decay.
 - **Hill beacon:** after decay each tick, HOME of the owning species on every live hill footprint cell is set to `home_beacon` (`P_MAX`, 1.0).
 - **Alarm/event deposits (DANGER unless noted):** combat hit `hit_alarm = 0.4` to both involved species' DANGER at the target cell (§6); ant death `death_alarm = 0.5` to the victim's species (§6); ant on THORNS or while FLEEING `hazard_alarm = 0.3` per tick/step (deposited at the cell where the hazard/flee event occurs, §5.3). Trail deposits (HOME/FOOD) are described in §5.4.
-- **Key pheromone parameters (defaults):** `cutoff = 0.001`, `epsilon = 0.05`, `food_density_ref (D_REF) = 50`, `home_beacon = 1.0`, `grad_beta = 2.0` (Sobel movement bias, §5.4/§9.3). All except clamp bounds are configurable via JSON / runtime where exposed.
+- **Key pheromone parameters (defaults):** `cutoff = 0.001`, `epsilon = 0.05`, `food_density_ref (D_REF) = 50`, `home_beacon = 1.0`, `grad_beta = 2.0` (Sobel movement bias, §5.4/§9.3), `tau_cap = 1.0` (soft cap for HOME/FOOD deposits; DANGER always hard-capped at `P_MAX`). All except clamp bounds are configurable via JSON / runtime where exposed.
 
 ## 5. Ants
 
-### 5.1 Ant struct (40 bytes, POD)
+### 5.1 Ant struct (44 bytes, POD)
 
-One ant is a 40-byte plain-old-data record, so 100 000 ants fit in 4 MB. The same layout is exposed to NumPy as a structured dtype (`static_assert(sizeof(Ant) == 40)`).
+One ant is a 44-byte plain-old-data record, so 100 000 ants fit in ~4.2 MB. The same layout is exposed to NumPy as a structured dtype (`static_assert(sizeof(Ant) == 44)`).
 
 | Offset | Bytes | Field | Type | Meaning |
 | --- | --- | --- | --- | --- |
@@ -99,11 +99,15 @@ One ant is a 40-byte plain-old-data record, so 100 000 ants fit in 4 MB. The sam
 | 18 | 1 | `state` | u8 | 0 SEARCHING, 1 RETURNING, 2 FIGHTING, 3 FLEEING, 255 DEAD |
 | 19 | 1 | `last_dir` | i8 | Last move: 0 N, 1 E, 2 S, 3 W; −1 = none |
 | 20 | 1 | `timer` | u8 | Remaining flee ticks |
-| 21 | 3 | `pad` | u8\[3\] | Alignment padding |
+| 21 | 1 | `explore_timer` | u8 | Ticks remaining ignoring FOOD after failed/erased visit; 0 = normal |
+| 22 | 1 | `fidelity_fail` | u8 | Reserved counter for failed remembered visits (v1: increment on memory failure) |
+| 23 | 1 | `pad` | u8 | Alignment/reserved padding, zeroed |
 | 24 | 4 | `health` | f32 | Current health (maximum is in the species table) |
 | 28 | 4 | `carried_volume` | f32 | Units of food being carried |
 | 32 | 4 | `carried_density` | f32 | Energy per unit of the carried food |
 | 36 | 4 | `move_acc` | f32 | Accumulated movement points (see §5.4) |
+| 40 | 2 | `food_x` | i16 | Remembered food cell x, `-1` = none |
+| 42 | 2 | `food_y` | i16 | Remembered food cell y, `-1` = none |
 
 ### 5.2 Species table
 
@@ -135,6 +139,14 @@ Each species is one entry in the species table. Stats are not copied into ants; 
 |  | `danger_k` | Reaction to DANGER: positive avoids, negative is attracted | 0.8 | −0.8 | 2.0 |
 |  | `danger_k_home` | Same, when near home (HOME ≥ 0.9) | −0.5 | −1.0 | 1.0 |
 | **Colony** | `orphan_loss` | Health fraction lost per tick with no live colony | 0.01 | 0.01 | 0.01 |
+| **Memory/Goal** | `p_fid` | Probability of keeping remembered food after delivery when memory is valid | 0.7 | 0.7 | 0.7 |
+|  | `goal_beta` | Goal alignment strength in goal mode | 2.0 | 2.0 | 2.0 |
+|  | `goal_random_move_frac` | Multiplier on `random_move_prob` in goal mode | 1/3 | 1/3 | 1/3 |
+|  | `explore_ticks` | FOOD-ignore ticks after failed/erased visit | 40 | 40 | 40 |
+|  | `food_erase_factor` | Local FOOD multiplier on depleted/plateau erase | 0.3 | 0.3 | 0.3 |
+|  | `food_erase_tau` | Minimum FOOD to consider for erase | 0.1 | 0.1 | 0.1 |
+|  | `food_erase_delta` | Max uphill FOOD difference treated as plateau | 0.02 | 0.02 | 0.02 |
+|  | `deposit_home_while_searching` | Deposit HOME while SEARCHING (experiment knob) | true | true | true |
 
 Global constants shared by all species (configurable): `ε = 0.05` (floor added to pheromone values in movement weights) and `D_REF = 50` (food density that gives a full-strength FOOD trail). Default species trail strengths/lengths are `a_home = 0.3`, `a_food = 0.6`, `trail_len_home = trail_len_food = 600` (tuned for reliable long-range foraging on the default 512×512 world together with §4 defaults).
 
@@ -184,7 +196,7 @@ States: `SEARCHING=0, RETURNING=1, FIGHTING=2, FLEEING=3, DEAD=255`. Rules are e
 | 8 | RETURNING on a friendly hill footprint | deliver → SEARCHING, `last_dir` reversed |
 | 9 | otherwise | move (§5.4) |
 
-**Pickup:** choose the adjacent cell (or own) with largest `food_volume`; `amount = min(carry_capacity, food_volume)`; `carried_density = food_density[cell]`; when volume reaches 0, density is set to 0. **Delivery:** `colony.stored_energy += carried_volume × carried_density`.
+**Pickup:** choose the adjacent cell (or own) with largest `food_volume`; `amount = min(carry_capacity, food_volume)`; `carried_density = food_density[cell]`; when volume reaches 0, density is set to 0. On successful pickup, set remembered food location (`food_x=source_x`, `food_y=source_y`), clear `fidelity_fail`, and clear `explore_timer`. **Delivery:** `colony.stored_energy += carried_volume × carried_density`. After delivery, transition to SEARCHING as before; if memory is valid and `rng.next_float() < p_fid`, keep memory, else clear memory (`food_x=food_y=-1`). Failed remembered-food visits clear memory, increment `fidelity_fail` (saturating at 255), set `explore_timer=explore_ticks`, and may trigger local FOOD erasure (§5.4).
 
 ### 5.4 Movement
 
@@ -197,7 +209,9 @@ Whenever the state table (§5.3) ends in "move", the ant goes through four steps
 | FLEEING | HOME | DANGER, 0.3 per step | no |
 | FIGHTING | does not move | – | – |
 
-Lost ants (movement-time behavior; state table unchanged): when `lost_mult > 0` and `trail_age >= lost_mult * trail_len_home` a SEARCHING ant carrying nothing follows HOME with nest-bias navigation and does not follow FOOD; when `trail_age >= lost_mult * trail_len_food` a RETURNING ant follows HOME with full nest-bias confidence (`conf=1`). `lost_mult == 0` disables lost behavior. Adjacent-food pickup, delivery, flee, attack, hazard, and orphan priorities remain as above; trail deposits fade to zero at `trail_age >= trail_len_*`.
+Lost ants (movement-time behavior; state table unchanged): when `lost_mult > 0` and `trail_age >= lost_mult * trail_len_home` a SEARCHING ant carrying nothing follows HOME with nest-bias navigation and does not follow FOOD; when `trail_age >= lost_mult * trail_len_food` a RETURNING ant follows HOME with full nest-bias confidence (`conf=1`). `lost_mult == 0` disables lost behavior. Goal mode has precedence for SEARCHING movement when memory is valid (`food_x>=0`) and `explore_timer==0`; goal mode overrides lost-home routing. On lost+goal timeout, clear memory and set `explore_timer=explore_ticks`; next tick falls back to normal/lost-home behavior. Adjacent-food pickup, delivery, flee, attack, hazard, and orphan priorities remain as above; trail deposits fade to zero at `trail_age >= trail_len_*`.
+
+**Goal mode / explore / erase:** goal mode is active when `state==SEARCHING && carried_volume==0 && food_x>=0 && explore_timer==0`. It uses goal alignment `goal[d]=clamp(1+goal_beta*align_goal[d],0.3,3)`, reduces `random_move_prob` by `goal_random_move_frac`, and disables nest-nav. While `explore_timer>0`, SEARCHING ants ignore FOOD in movement weighting/gradient bias and keep DANGER/passability/cost logic. Active erase triggers at most once per ant tick for eligible SEARCHING ants with no food on plateau: if `FOOD[cell] >= food_erase_tau` and `max(FOOD in 4-neighborhood)-FOOD[cell] <= food_erase_delta`, then `FOOD[cell] *= food_erase_factor` and `explore_timer=max(explore_timer, explore_ticks)`. Memory-failure erase uses the same multiplier/timer fields on remembered-target failure.
 
 **Step 1 — Candidate cells.** The ant looks at its 4 neighbors (N, E, S, W). A neighbor is a candidate only if it is inside the map, has passable terrain, holds no other ant, and is not part of another species' hill. The cell behind the ant (opposite of `last_dir`) is excluded, which stops ants from jittering back and forth. It becomes allowed again only when nothing else is available, so ants can leave dead ends and back out of a head-on jam. With no candidates the ant waits and keeps its accumulated movement points.
 
@@ -233,11 +247,11 @@ A strong trail therefore dominates, while on bare ground the forward bonus gives
 
 **Step 3 — Pay the movement cost.** Each tick the ant adds its `speed` to `move_acc` (capped at 2). It can enter the chosen cell only if `move_acc` ≥ the terrain's `move_cost`; the cost is then subtracted. An ant moves at most one cell per tick. Examples: a Tank (speed 0.5) on grass (cost 1.0) moves every second tick; a Swarmer (speed 1.0) in mud (cost 2.0) also moves every second tick; on a PATH (cost 0.7) a Swarmer moves every tick and the surplus 0.3 is kept.
 
-**Step 4 — Deposit pheromone.** After moving (and at the moment of pickup) the ant adds pheromone to the cell it stands on, capped at 1.
+**Step 4 — Deposit pheromone.** After moving (and at the moment of pickup) the ant adds pheromone to the cell it stands on. HOME/FOOD deposits use the channel-aware soft cap from §4 (`tau_cap`); DANGER deposits are always hard-capped at `P_MAX`.
 
 | State | Channel | Amount | `trail_age` |
 | --- | --- | --- | --- |
-| SEARCHING | HOME | `a_home · max(0, 1 − trail_age / trail_len_home)` | Reset to 0 on a friendly hill, +1 per move |
+| SEARCHING | HOME | `a_home · max(0, 1 − trail_age / trail_len_home)` (gated by `deposit_home_while_searching`) | Reset to 0 on a friendly hill, +1 per move |
 | RETURNING | FOOD | `a_food · dn · max(0, 1 − trail_age / trail_len_food)`, with `dn = min(1, carried_density / D_REF)` | Reset to 0 at pickup, +1 per move |
 
 Because deposits fade with `trail_age`, a trail is strongest near its source and weakest far away, so following it uphill always leads toward the nest (HOME) or the food (FOOD). Richer food (higher density) gives a stronger FOOD trail, which pulls more ants to the better source.
@@ -362,7 +376,7 @@ config JSON --> M0 loader --> engine structs (species, terrain, params);  M3 and
 
 ### 9.3 Python API of module `formicae` (I1, I3, I4)
 
-The module exposes `formicae.__version__` and `formicae.API_VERSION = 1`. All calls must come from one thread. While `step` runs, it releases the GIL so the UI thread may redraw, but any other call on the same `Simulation` then raises `RuntimeError("busy")`. Bad arguments raise `ValueError`; calling in the wrong state raises `RuntimeError`; `step` itself never raises.
+The module exposes `formicae.__version__` and `formicae.API_VERSION = 2`. All calls must come from one thread. While `step` runs, it releases the GIL so the UI thread may redraw, but any other call on the same `Simulation` then raises `RuntimeError("busy")`. Bad arguments raise `ValueError`; calling in the wrong state raises `RuntimeError`; `step` itself never raises.
 
 | Method | Behavior |
 | --- | --- |
@@ -371,7 +385,7 @@ The module exposes `formicae.__version__` and `formicae.API_VERSION = 1`. All ca
 | `step(n: int = 1) -> int` | Runs `1 ≤ n ≤ 10 000` ticks and returns the new tick number. Invalidates all views. |
 | `reset() -> None` | Restores the stored config, initial map and seeds; `tick = 0`. Invalidates all views. |
 | `tick` (read-only property) | Current tick number. |
-| `save(path) -> None` / `load(path) -> None` | Binary snapshot with header `ANTS` + format version; `load` restores everything including RNG state. (Priority P2.) |
+| `save(path) -> None` / `load(path) -> None` | Binary snapshot with header `ANTS` + format version; `load` restores everything including RNG state. Snapshot format is versioned and rejects unsupported/old versions with a clear error including the expected version (Ant layout changed to 44 bytes; old saves unsupported). (Priority P2.) |
 | `spawn_food(x, y, radius, volume, density) -> int` | `0 ≤ radius ≤ 10`, `volume > 0`, `0 < density ≤ 100`. Fills the disc as in §7.4, skipping impassable and hill cells; merges with existing food volume-weighted; returns the number of cells changed. |
 | `set_terrain(x, y, terrain_id) -> None` | Changes one cell and its derived `move_cost`/`evap_mod`. `ValueError` for unknown id, hill cells, or making an occupied cell impassable. |
 | `set_param(name, value) -> None` | Runtime-tunable values only (table below); takes effect at the next tick. |
@@ -490,9 +504,9 @@ M2 may read species and caste data only through `species_of(ant)` (the resolved 
 
 One JSON file (`configs/default.json`) with sections `world`, `time`, `pheromone`, `movement`, `food`, `terrain[]`, `species[]` (each species may contain `castes[]`), `colony`, `hostility`, `render`, `analytics`, and `seeds`. Validated at load: unknown keys rejected, ranges checked, `S ≤ 8`. Missing `movement` and missing per-species `nav_beta`/`noise_damp` use SPECS defaults (backward compatibility); present values and unknown keys are rejected. CLI: `python -m formicae_ui --config configs/default.json --map-seed 42 --sim-seed 7`.
 
-**`pheromone` keys (defaults):** `decay` = `[ρ_HOME, ρ_FOOD, ρ_DANGER]` in `[0,1]` (`[0.0015, 0.001, 0.015]`), `decay_scale` `[0,10]` (1.0), `diffusion` `[0,0.2]` (0.03), `cutoff` `[0,1]` (0.001), `hit_alarm` `[0,1]` (0.4), `death_alarm` `[0,1]` (0.5), `hazard_alarm` `[0,1]` (0.3), `home_beacon` `[0,1]` (1.0), `food_density_ref` `>0` (50), `epsilon` `>0` (0.05), `grad_beta` `[0,8]` (2.0). Semantics and alarm/deposit behaviour: §4, §5.4. Runtime-tunable subset: §9.3.
+**`pheromone` keys (defaults):** `decay` = `[ρ_HOME, ρ_FOOD, ρ_DANGER]` in `[0,1]` (`[0.0015, 0.001, 0.015]`), `decay_scale` `[0,10]` (1.0), `diffusion` `[0,0.2]` (0.03), `cutoff` `[0,1]` (0.001), `hit_alarm` `[0,1]` (0.4), `death_alarm` `[0,1]` (0.5), `hazard_alarm` `[0,1]` (0.3), `home_beacon` `[0,1]` (1.0), `food_density_ref` `>0` (50), `epsilon` `>0` (0.05), `grad_beta` `[0,8]` (2.0), `tau_cap` `(0,1]` (1.0, soft cap for HOME/FOOD; DANGER always hard-capped at `P_MAX`). Semantics and alarm/deposit behaviour: §4, §5.4. Runtime-tunable subset: §9.3.
 
-**`movement` keys (defaults):** `nav_min` `>0` (0.3), `nav_max` `>=nav_min` (2.0), `noise_tau_ref` `>0` (0.3). Runtime-only scales `nav_scale` `[0,4]` (1.0) and `noise_damp_scale` `[0,2]` (1.0) are set via `set_param`, not JSON. Semantics: §5.4. Per-species navigation/noise/lost keys: `nav_beta` `>=0` (1.5), `noise_damp` `[0,1]` (0.8), `lost_mult` `>=0` (1.0; Nomad 2.0; `0` disables lost behavior for parity/debug), resolved per `[species][caste]` (§5.2).
+**`movement` keys (defaults):** `nav_min` `>0` (0.3), `nav_max` `>=nav_min` (2.0), `noise_tau_ref` `>0` (0.3). Runtime-only scales `nav_scale` `[0,4]` (1.0) and `noise_damp_scale` `[0,2]` (1.0) are set via `set_param`, not JSON. Semantics: §5.4. Per-species navigation/noise/lost keys: `nav_beta` `>=0` (1.5), `noise_damp` `[0,1]` (0.8), `lost_mult` `>=0` (1.0; Nomad 2.0; `0` disables lost behavior for parity/debug), resolved per `[species][caste]` (§5.2). Per-species memory/goal/erase keys: `p_fid` `[0,1]` (0.7), `goal_beta` `>=0` (2.0), `goal_random_move_frac` `[0,1]` (1/3), `explore_ticks` `[0,255]` (40), `food_erase_factor` `[0,1]` (0.3), `food_erase_tau` `[0,1]` (0.1), `food_erase_delta` `[0,1]` (0.02), `deposit_home_while_searching` bool (true).
 
 ## 12. Repository, build, conventions
 
